@@ -1,0 +1,15 @@
+EFIAPI EFI_GRAPHICS_OUTPUT_PROTOCOL* init_gop(EFI_SYSTEM_TABLE *SystemTable);
+void init_screen_driver(BootInfo* info);
+EFIAPI void fill_screen(UINT8 r, UINT8 g, UINT8 b, UINT8 a);
+EFIAPI void draw_square(UINT32 size, UINT8 r, UINT8 g, UINT8 b, UINT8 a);
+EFIAPI void draw_rect(UINT32 x, UINT32 y, UINT32 w, UINT32 h, UINT8 r, UINT8 g, UINT8 b, UINT8 alpha);
+EFIAPI void draw_ui_element(UINT32 w, UINT32 h, int anchor, UINT8 r, UINT8 g, UINT8 b, UINT8 a);
+EFIAPI void swap_buffers(EFI_GRAPHICS_OUTPUT_PROTOCOL *gop);
+EFIAPI void draw_pixel(UINT32 x, UINT32 y, UINT8 r, UINT8 g, UINT8 b, UINT8 alpha);
+EFIAPI void draw_alpha_test_bar(UINT32 start_x, UINT32 start_y, UINT32 height);
+void screen_switch_to_virtio(void);
+EFIAPI void draw_circle(UINT32 center_x, UINT32 center_y, UINT32 rad, UINT8 r, UINT8 g, UINT8 b, UINT8 a);
+EFIAPI void draw_taskbar(UINT32 x1, UINT32 y1, UINT32 x2, UINT32 y2, UINT32 rad, UINT8 r, UINT8 g, UINT8 b, UINT8 a);
+void draw_icon(UINT32 x0, UINT32 y0);
+void draw_wallpaper(UINT32 x0, UINT32 y0);
+void draw_ico_folder(UINT32 x0, UINT32 y0);
