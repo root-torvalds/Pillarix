@@ -19,7 +19,7 @@ EFIAPI EFI_GRAPHICS_OUTPUT_PROTOCOL* init_gop(EFI_SYSTEM_TABLE *SystemTable) {
         EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info = 0;
         status = gop->QueryMode(gop, i, &size_of_info, &info);
         if (status == 0 && info) {
-            // Ищем 1920x1080
+            // Запрашиваем 1920x1080
             if (info->HorizontalResolution == 1920 && info->VerticalResolution == 1080 &&
                 (info->PixelFormat == 0 || info->PixelFormat == 1)) {
                 if (gop->SetMode(gop, i) == 0) {
@@ -58,7 +58,7 @@ EFIAPI long long efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     }
 
     unsigned long long v_buffer_addr = 0;
-    // Объявляем переменную status перед использованием
+    // 1920 * 1080 * 4 / 4096 = 2025 страниц
     long long status = bs->AllocatePages(0, 4, 2025, &v_buffer_addr);
     if (status != 0) {
         while(1) { __asm__ __volatile__("hlt"); }
@@ -67,8 +67,8 @@ EFIAPI long long efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     BootInfo info;
     info.FrameBufferBase = (void*)gop->Mode->FrameBufferBase;
     info.FrameBufferSize = gop->Mode->FrameBufferSize;
-    info.HorizontalResolution = 1920;
-    info.VerticalResolution = 1080;
+    info.HorizontalResolution = gop->Mode->Info ? gop->Mode->Info->HorizontalResolution : 1920;
+    info.VerticalResolution = gop->Mode->Info ? gop->Mode->Info->VerticalResolution : 1080;
     info.PixelsPerScanLine = (gop->Mode->Info) ? gop->Mode->Info->PixelsPerScanLine : 1920;
     info.VirtualFrameBuffer = (void*)v_buffer_addr;
     info.SystemTable = (void*)SystemTable;

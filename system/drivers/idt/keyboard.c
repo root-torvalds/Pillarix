@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "../../kernel/kernel/kernel.h"
+
 extern volatile int has_keyboard_event;
 extern volatile uint8_t last_scancode;
 
@@ -10,6 +11,10 @@ void sys_reset_direct(void) {
     while(1) { __asm__ volatile("hlt"); }
 }
 
+volatile uint8_t kbd_ring_buffer[KBD_BUFFER_SIZE];
+volatile int kbd_head = 0;
+volatile int kbd_tail = 0;
+
 void keyboard_handler_c() {
     uint8_t scancode = inb(0x60);
 
@@ -17,8 +22,13 @@ void keyboard_handler_c() {
         sys_reset_direct();
     }
 
-    last_scancode = scancode;
-    has_keyboard_event = 1;
+    // Кладем скан-код в кольцевой буфер
+    int next_head = (kbd_head + 1) % KBD_BUFFER_SIZE;
+    if (next_head != kbd_tail) { // Если буфер не переполнен, сохраняем
+        kbd_ring_buffer[kbd_head] = scancode;
+        kbd_head = next_head;
+    }
+    // Если переполнен — символ пропадёт, но ядро не заклинит
 
-    send_apic_eoi(); // Вместо outb(0x20, 0x20);
+    send_apic_eoi(); // LAPIC свободен для новых прерываний!
 }

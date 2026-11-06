@@ -1,6 +1,8 @@
 #pragma once
-
+#include <stdint.h>
 #define EFIAPI __attribute__((ms_abi))
+
+extern uint32_t width; extern uint32_t height;
 
 typedef unsigned long long UINTN;
 typedef unsigned int UINT32;

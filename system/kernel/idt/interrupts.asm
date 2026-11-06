@@ -1,5 +1,4 @@
 [bits 64]
-section .text
 
 global keyboard_handler_asm
 extern keyboard_handler_c

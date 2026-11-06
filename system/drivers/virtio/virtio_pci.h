@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DISPLAY_WIDTH                          1920
-#define DISPLAY_HEIGHT                         1080
+#define DISPLAY_WIDTH                          1024
+#define DISPLAY_HEIGHT                         768
 #define GPU_RESOURCE_ID                        1
 
 #define VIRTIO_PCI_VENDOR_ID                   0x1AF4
@@ -163,11 +163,11 @@ typedef struct {
     uint8_t bus;
     uint8_t slot;
     uint8_t func;
-
+    
     volatile struct virtio_pci_common_cfg *common_cfg;
     volatile uint8_t                      *isr_cfg;
     volatile void                         *device_cfg;
-
+    
     uint64_t notify_base_addr;
     uint32_t notify_multiplier;
     uint8_t  notify_bar;
@@ -177,17 +177,17 @@ typedef struct {
 
 #ifdef __cplusplus
 extern "C" {
-    #endif
+#endif
 
-    int virtio_pci_init_device(virtio_pci_device_t *vdev, uint8_t bus, uint8_t slot, uint8_t func);
-    int virtio_gpu_negotiate_features(virtio_pci_device_t *vdev);
-    int virtio_queue_setup(virtio_pci_device_t *vdev, uint16_t queue_index);
-    int virtio_dev_send_command(virtio_pci_device_t *vdev, uint16_t queue_index, void *cmd_buf, uint32_t cmd_len, void *resp_buf, uint32_t resp_len);
+int virtio_pci_init_device(virtio_pci_device_t *vdev, uint8_t bus, uint8_t slot, uint8_t func);
+int virtio_gpu_negotiate_features(virtio_pci_device_t *vdev);
+int virtio_queue_setup(virtio_pci_device_t *vdev, uint16_t queue_index);
+int virtio_dev_send_command(virtio_pci_device_t *vdev, uint16_t queue_index, void *cmd_buf, uint32_t cmd_len, void *resp_buf, uint32_t resp_len);
 
-    int  init_virtio_gpu(void);
-    int  virtio_gpu_setup_screen(void);
-    void virtio_gpu_redraw(void);
+int  init_virtio_gpu(void);
+int  virtio_gpu_setup_screen(void);
+void virtio_gpu_redraw(void);
 
-    #ifdef __cplusplus
+#ifdef __cplusplus
 }
 #endif

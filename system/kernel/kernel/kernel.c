@@ -1,5 +1,17 @@
 #include "kernel.h"
-#include "app_bin.h" // Скомпилированный бинарник пользовательской программы в виде массива байт
+
+#define KBD_MOD_LSHIFT   (1 << 0)
+#define KBD_MOD_RSHIFT   (1 << 1)
+#define KBD_MOD_LCTRL    (1 << 2)
+#define KBD_MOD_LALT     (1 << 3)
+#define KBD_MOD_SHIFT    (KBD_MOD_LSHIFT | KBD_MOD_RSHIFT)
+
+typedef struct {
+    uint8_t modifiers;
+    bool caps_lock;
+} kbd_state_t;
+
+static kbd_state_t kbd;
 
 volatile int has_keyboard_event = 0;
 volatile int has_mouse_event = 0;
@@ -8,21 +20,56 @@ volatile uint8_t last_scancode = 0;
 extern int mouse_x;
 extern int mouse_y;
 
-// Внешние объявления подсистем памяти, PE-лоадера и перехода в Ring 3
-#ifdef __cplusplus
-extern "C" {
-#endif
-    uint64_t load_pe_executable(uint8_t* file_image);
-    void jump_to_user_space(uint64_t entry_point, uint64_t user_stack);
-    void* allocate_kernel_memory(uint32_t size);
-    void* allocate_user_pages(uint64_t virtual_addr, uint64_t size);
+static const char kbd_break_normal[256] = {
+    [0xA8] = '\'', [0x9E] = 'a',  [0xB0] = 'b',  [0xAE] = 'c',  [0xA0] = 'd',
+    [0x92] = 'e',  [0xA1] = 'f',  [0xA2] = 'g',  [0xA3] = 'h',  [0x97] = 'i',
+    [0xA4] = 'j',  [0xA5] = 'k',  [0xA6] = 'l',  [0xB2] = 'm',  [0xB1] = 'n',
+    [0x98] = 'o',  [0x99] = 'p',  [0x90] = 'q',  [0x93] = 'r',  [0x9F] = 's',
+    [0x94] = 't',  [0x96] = 'u',  [0xAF] = 'v',  [0x91] = 'w',  [0xAD] = 'x',
+    [0x95] = 'y',  [0xAC] = 'z'
+};
 
-    void __attribute__((ms_abi)) screen_switch_to_virtio(void);
-    int  __attribute__((ms_abi)) init_virtio_gpu(void);
-    int  __attribute__((ms_abi)) virtio_gpu_setup_screen(void);
-#ifdef __cplusplus
-}
-#endif
+static const char kbd_break_shift[256] = {
+    [0xA8] = '\"', [0x9E] = 'A',  [0xB0] = 'B',  [0xAE] = 'C',  [0xA0] = 'D',
+    [0x92] = 'E',  [0xA1] = 'F',  [0xA2] = 'G',  [0xA3] = 'H',  [0x97] = 'I',
+    [0xA4] = 'J',  [0xA5] = 'K',  [0xA6] = 'L',  [0xB2] = 'M',  [0xB1] = 'N',
+    [0x98] = 'O',  [0x99] = 'P',  [0x90] = 'Q',  [0x93] = 'R',  [0x9F] = 'S',
+    [0x94] = 'T',  [0x96] = 'U',  [0xAF] = 'V',  [0x91] = 'W',  [0xAD] = 'X',
+    [0x95] = 'Y',  [0xAC] = 'Z'
+};
+
+static const char qm[8][8] = {
+    {0,0,0,0,1,0,0,0},
+    {0,0,0,0,1,0,0,0},
+    {0,0,0,1,0,0,0,0},
+    {0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0}
+};
+
+static const char qms[8][8] = {
+    {0,0,0,1,0,0,1,0},
+    {0,0,0,1,0,0,1,0},
+    {0,0,1,0,0,1,0,0},
+    {0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0}
+};
+
+static const char gt_matrix[8][8] = {
+    {1, 0, 0, 0, 0, 0, 0, 0},
+    {0, 1, 0, 0, 0, 0, 0, 0},
+    {0, 0, 1, 0, 0, 0, 0, 0},
+    {0, 0, 0, 1, 0, 0, 0, 0},
+    {0, 0, 1, 0, 0, 0, 0, 0},
+    {0, 1, 0, 0, 0, 0, 0, 0},
+    {1, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0}
+};
 
 void sys_reset(void) {
     outb(0xCF9, 0x02);
@@ -30,6 +77,7 @@ void sys_reset(void) {
     outb(0xCF9, 0x06);
     while(1) { __asm__ volatile("hlt"); }
 }
+
 
 void sys_shutdown(void) {
     outw(0xB2, 0x07);
@@ -51,141 +99,241 @@ void sys_shutdown(void) {
     __asm__ __volatile__("cli; hlt");
 }
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+    void __attribute__((ms_abi)) screen_switch_to_virtio(void);
+    int  __attribute__((ms_abi)) init_virtio_gpu(void);
+
+    int  __attribute__((ms_abi)) virtio_gpu_setup_screen(void);
+#ifdef __cplusplus
+}
+#endif
+
 void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
     if (!info) {
         while(1) { __asm__ __volatile__("hlt"); }
     }
 
-    init_screen_driver(info);
-    fill_screen(0, 0, 0, 255);
-
-    // Пропорциональное позиционирование иконки (центр экрана 1920x1080)
-    draw_icon(1920 / 2 - 32, 1080 / 2 - 32);
-    swap_buffers(0);
+    initScreenDriver(info);
+    fillScreen(0, 0, 0, 255);
+    swapBuffers(0);
 
     init_idt();
-    printf("[KERNEL] Initializing IDT...", 100, 200, 255, 255, 0, 255);
-    swap_buffers(0);
+    printf("[KERNEL] Initializing IDT...", 50, 150, 255, 255, 0, 255);
+    swapBuffers(0);
     disable_pic();
-    printf("[KERNEL] Disable PIC...", 100, 250, 255, 255, 0, 255);
-    swap_buffers(0);
+    printf("[KERNEL] Disable PIC...", 50, 200, 255, 255, 0, 255);
+    swapBuffers(0);
     init_local_apic();
-    printf("[KERNEL] Initializing LAPIC...", 100, 300, 255, 255, 0, 255);
-    swap_buffers(0);
+    printf("[KERNEL] Initializing LAPIC...", 50, 250, 255, 255, 0, 255);
+    swapBuffers(0);
     init_lapic_timer(1000);
-    printf("[KERNEL] Initializing LAPIC timer...", 100, 350, 255, 255, 0, 255);
-    swap_buffers(0);
+    printf("[KERNEL] Initializing LAPIC timer...", 50, 300, 255, 255, 0, 255);
+    swapBuffers(0);
     init_ioapic();
-    printf("[KERNEL] Initializing I/O APIC...", 100, 400, 255, 255, 0, 255);
-    swap_buffers(0);
+    printf("[KERNEL] Initializing I/O APIC...", 50, 350, 255, 255, 0, 255);
+    swapBuffers(0);
     init_mouse();
-    printf("[KERNEL] Initializing mouse...", 100, 450, 255, 255, 0, 255);
-    swap_buffers(0);
+    printf("[KERNEL] Initializing mouse...", 50, 400, 255, 255, 0, 255);
+    swapBuffers(0);
     io_apic_set_redirect(1, 33);
-    printf("[KERNEL] I/O APIC set redirect...", 100, 500, 255, 255, 0, 255);
-    swap_buffers(0);
+    printf("[KERNEL] I/O APIC set redirect...", 50, 450, 255, 255, 0, 255);
+    swapBuffers(0);
     init_intel_hda();
-    printf("[KERNEL] Initializing Intel HDA...", 100, 550, 255, 255, 0, 255);
-    swap_buffers(0);
+    printf("[KERNEL] Initializing Intel HDA...", 50, 500, 255, 255, 0, 255);
+    swapBuffers(0);
     init_ahci();
-    printf("[KERNEL] Initializing AHCI...", 100, 600, 255, 255, 0, 255);
-    swap_buffers(0);
+    printf("[KERNEL] Initializing AHCI...", 50, 550, 255, 255, 0, 255);
+    swapBuffers(0);
     init_ext4();
-    printf("[KERNEL] Initializing Ext4...", 100, 650, 255, 255, 0, 255);
-    swap_buffers(0);
+    printf("[KERNEL] Initializing Ext4...", 50, 600, 255, 255, 0, 255);
+    swapBuffers(0);
 
-    printf("[KERNEL] Initializing VirtIO GPU Transport...", 100, 700, 255, 255, 0, 255);
+    printf("[KERNEL] Initializing VirtIO GPU Transport...", 50, 650, 255, 255, 0, 255);
     int res = init_virtio_gpu();
     if (res != 0) {
-        printf("FAILED!", 800, 200, 255, 0, 0, 255);
-        swap_buffers(0);
+        printf("FAILED!", 500, 100, 255, 0, 0, 255);
+        swapBuffers(0);
         while(1) { __asm__ volatile("hlt"); }
     }
-    printf("SUCCESS!", 800, 200, 0, 255, 0, 255);
-    swap_buffers(0);
+    printf("SUCCESS!", 500, 100, 0, 255, 0, 255);
+    swapBuffers(0);
+
+
+    printf("[KERNEL] Running virtio_gpu_setup_screen...", 50, 700, 255, 255, 0, 255);
+    swapBuffers(0);
 
     int screen_res = virtio_gpu_setup_screen();
+    printf("DONE!", 500, 130, 0, 255, 0, 255);
+    swapBuffers(0);
 
     if (screen_res == 0) {
-        screen_switch_to_virtio();
+
+        screenSwitchToVirtio();
+
+
+        printf("VirtIO GPU Display Setup: SUCCESS!", 50, 400, 0, 255, 0, 255);
+        swapBuffers(0);
+
+
         virtio_gpu_redraw();
 
-        printf("[KERNEL] Initializing Hardware Cursor Plane...", 100, 760, 255, 255, 0, 255);
-        swap_buffers(0);
+
+        printf("[KERNEL] Initializing Hardware Cursor Plane...", 50, 160, 255, 255, 0, 255);
+        swapBuffers(0);
         display_manager_init_hardware_cursor(os_framebuffer);
 
-        // === ПОЛНОЦЕННЫЙ ЗАПУСК USER SPACE (RING 3) ===
-        // Передаем массив байт образа программы в PE-лоадер
-        uint64_t entry_point = load_pe_executable((uint8_t*)image_user_app);
+    } else {
 
-        if (entry_point != 0) {
-            // Выделяем пользовательский стек (64 КБ по виртуальному адресу 0x600000) с флагом User
-            uint64_t stack_va = 0x5F0000;
-            uint64_t stack_size = 0x10000;
-            void* user_stack = allocate_user_pages(stack_va, stack_size);
-            uint64_t user_stack_top = 0x600000;
+        printf("[KERNEL] Display Setup Error!", 50, 400, 255, 0, 0, 255);
 
-            if (user_stack) {
-                printf("[KERNEL] Launching User Space App in Ring 3...", 100, 810, 0, 255, 0, 255);
-                swap_buffers(0);
 
-                // Безопасный переход в Ring 3 через iretq
-                jump_to_user_space(entry_point, user_stack_top);
-            } else {
-                printf("[KERNEL] Error: Failed to allocate user stack!", 100, 810, 255, 0, 0, 255);
-                swap_buffers(0);
-            }
+        int qemu_resp = -screen_res;
+
+        if (qemu_resp == 0x1200) {
+            printf("QEMU RESP: VIRTIO_GPU_RESP_ERR_UNSPEC (General Device Error)", 50, 430, 255, 100, 100, 255);
+        } else if (qemu_resp == 0x1201) {
+            printf("QEMU RESP: VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY", 50, 430, 255, 100, 100, 255);
+        } else if (qemu_resp == 0x1202) {
+            printf("QEMU RESP: VIRTIO_GPU_RESP_ERR_INVALID_SCANOUT_ID", 50, 430, 255, 100, 100, 255);
+        } else if (qemu_resp == 0x1203) {
+            printf("QEMU RESP: VIRTIO_GPU_RESP_ERR_INVALID_RESOURCE_ID (Conflict)", 50, 430, 255, 100, 100, 255);
+        } else if (qemu_resp == 0x1205) {
+            printf("QEMU RESP: VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER", 50, 430, 255, 100, 100, 255);
         } else {
-            printf("[KERNEL] Error: Invalid PE Header or Loading Failed!", 100, 810, 255, 0, 0, 255);
-            swap_buffers(0);
+
+            if (screen_res == -15) {
+                printf("OS Error: Failed to allocate framebuffer RAM (Page aligned)", 50, 430, 255, 100, 100, 255);
+            } else {
+                printf("Unknown status code raw register value received", 50, 430, 255, 100, 100, 255);
+            }
         }
 
-    } else {
-        printf("[KERNEL] Display Setup Error!", 100, 500, 255, 0, 0, 255);
-        swap_buffers(0);
+        swapBuffers(0);
         while(1) { __asm__ volatile("hlt"); }
     }
 
     ext4_create_dir("/", "hello_world");
     ext4_create_file("/hello_world", "hello_world.txt", 0x1A4, "Hello World from Kernel!", 24);
 
+
     for (volatile int i = 0; i < 10000000; i++) {
         __asm__ volatile("nop");
     }
+
 
     __asm__ volatile("sti");
 
     static uint32_t last_sent_mouse_x = 9999;
     static uint32_t last_sent_mouse_y = 9999;
 
-    mouse_x = 1920 / 2;
-    mouse_y = 1080 / 2;
+    mouse_x = 512;
+    mouse_y = 384;
+
+    fillScreen(0, 0, 0, 255);
+    swapBuffers(0);
+
+    char command[512];
+    char null[256] = {0};
+    int i = 0;
+    int o = 1;
+    int x = 0;
+
+    {
+        int gt_x = 0;
+        int gt_y = (o * 15) - 8;
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                if (gt_matrix[row][col]) {
+                    drawPoint(gt_x + col, gt_y + row, 255, 255, 255, 255);
+                } else {
+                    drawPoint(gt_x + col, gt_y + row, 0, 0, 0, 255);
+                }
+            }
+        }
+    }
+
+    extern volatile uint8_t kbd_ring_buffer[];
+    extern volatile int kbd_head;
+    extern volatile int kbd_tail;
 
     while (1) {
         __asm__ __volatile__("hlt");
+        static int sh = 0;
+        int need_swap = 0;
 
-        if (has_keyboard_event) {
-            has_mouse_event = 0;
-            has_keyboard_event = 0;
-            if (last_scancode == 0x01) {
+        while (kbd_head != kbd_tail) {
+            uint8_t current_scancode = kbd_ring_buffer[kbd_tail];
+            kbd_tail = (kbd_tail + 1) % KBD_BUFFER_SIZE;
+
+            need_swap = 1;
+
+            if (current_scancode == 0x2A || current_scancode == 0x36) {
+                sh = 1;
+            } else if (current_scancode == 0xAA || current_scancode == 0xB6) {
+                sh = 0;
+            } else if (current_scancode == 0x01) {
                 sys_reset();
+            } else if (current_scancode == 0x1C) {
+                if (x > 0) {
+                    command[x] = '\0';
+                    int lines_used = terminal_execute_command(command, 0, o, o);
+                    o = o + 1 + lines_used;
+                } else {
+                    o++;
+                }
+                i = 0;
+                x = 0;
+                for (int f = 0; f < 512; f++) command[f] = 0;
+
+                {
+                    int gt_x = 0;
+                    int gt_y = (o * 15) - 8;
+                    for (int row = 0; row < 8; row++) {
+                        for (int col = 0; col < 8; col++) {
+                            if (gt_matrix[row][col]) {
+                                drawPoint(gt_x + col, gt_y + row, 255, 255, 255, 255);
+                            } else {
+                                drawPoint(gt_x + col, gt_y + row, 0, 0, 0, 255);
+                            }
+                        }
+                    }
+                }
+            } else if (current_scancode == 0x39) { // Space
+                if (i >= 128) { o++; i = 0; }
+                printf(" ", i * 15, o * 15, 255, 255, 255, 255);
+                command[x] = ' ';
+                i++; x++;
+            } else {
+                char ascii = sh ? kbd_break_shift[current_scancode] : kbd_break_normal[current_scancode];
+                if (ascii != 0) {
+                    if (i >= 128) { o++; i = 0; }
+
+                    int start_x = 15 + (i * 15);
+                    int start_y = (o * 15) - 8;
+
+                    if (ascii == 34 || ascii == '\'') {
+                        const char (*matrix)[8] = (ascii == 34) ? qms : qm;
+
+                        for (int row = 0; row < 8; row++) {
+                            for (int col = 0; col < 8; col++) {
+                                if (matrix[row][col]) {
+                                    drawPoint(start_x + col, start_y + row, 255, 255, 255, 255);
+                                } else {
+                                    drawPoint(start_x + col, start_y + row, 0, 0, 0, 255);
+                                }
+                            }
+                        }
+                    } else {
+                        char str[2] = { ascii, '\0' };
+                        printf(str, start_x, o * 15, 255, 255, 255, 255);
+                    }
+
+                    command[x] = ascii;
+                    i++; x++;
+                }
             }
-        }
-        else if (has_mouse_event) {
-            has_mouse_event = 0;
-
-            // Ограничение координат мыши 1920x1080
-            if (mouse_x < 0) mouse_x = 0;
-            if (mouse_y < 0) mouse_y = 0;
-            if (mouse_x >= 1920) mouse_x = 1919;
-            if (mouse_y >= 1080) mouse_y = 1079;
-
-            if (mouse_x != last_sent_mouse_x || mouse_y != last_sent_mouse_y) {
-                last_sent_mouse_x = mouse_x;
-                last_sent_mouse_y = mouse_y;
-
-                display_manager_move_cursor(mouse_x, mouse_y);
-            }
-        }
+        } swapBuffers(0);
     }
 }

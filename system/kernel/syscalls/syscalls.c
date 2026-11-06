@@ -2,6 +2,7 @@
 #include "../kernel/kernel.h"
 #include <stdint.h>
 
+// Простой вывод символа в текстовом режиме VGA (0xB8000)
 static int terminal_row = 0;
 static int terminal_col = 0;
 
@@ -15,7 +16,7 @@ void terminal_putchar(char c) {
         terminal_row++;
     } else {
         const int index = terminal_row * VGA_WIDTH + terminal_col;
-        vga_buffer[index] = (uint16_t)c | (0x0F << 8);
+        vga_buffer[index] = (uint16_t)c | (0x0F << 8); // Белый текст на черном фоне
         terminal_col++;
         if (terminal_col >= VGA_WIDTH) {
             terminal_col = 0;
@@ -28,6 +29,7 @@ void terminal_putchar(char c) {
     }
 }
 
+// Максимальное количество открытых файлов в таблице процессов
 #define MAX_OPEN_FILES 16
 
 typedef struct {
@@ -36,16 +38,19 @@ typedef struct {
     uint32_t offset;
 } FileDescriptor;
 
+// Таблица открытых файлов для текущего контекста
 static FileDescriptor process_fd_table[MAX_OPEN_FILES];
 
+// Реализация sys_write (вывод в консоль или запись в файл)
 int32_t sys_write(int fd, const char *buf, uint32_t count) {
-    if (fd == 1 || fd == 2) {
+    if (fd == 1 || fd == 2) { // stdout или stderr -> выводим на экран
         for (uint32_t i = 0; i < count; i++) {
             terminal_putchar(buf[i]);
         }
         return (int32_t)count;
     }
 
+    // Если это файловый дескриптор, пишем через драйвер Ext4
     if (fd >= 3 && fd < MAX_OPEN_FILES && process_fd_table[fd].active) {
         return (int32_t)count;
     }
@@ -53,30 +58,43 @@ int32_t sys_write(int fd, const char *buf, uint32_t count) {
     return -1;
 }
 
+// Реализация sys_read
 int32_t sys_read(int fd, char *buf, uint32_t count) {
     (void)buf;
     (void)count;
-    if (fd == 0) return 0;
-    if (fd >= 3 && fd < MAX_OPEN_FILES && process_fd_table[fd].active) return 0;
+    if (fd == 0) { // stdin
+        return 0;
+    }
+
+    if (fd >= 3 && fd < MAX_OPEN_FILES && process_fd_table[fd].active) {
+        return 0;
+    }
+
     return -1;
 }
 
+// Реализация sys_open (открытие файла из структуры Ext4)
 int32_t sys_open(const char *path, int flags) {
     (void)flags;
     uint32_t inode_num = ext4_find_inode_by_path(path);
-    if (inode_num == 0) return -1;
+    if (inode_num == 0) {
+        return -1; // Файл не найден
+    }
 
+    // Ищем свободный дескриптор
     for (int i = 3; i < MAX_OPEN_FILES; i++) {
         if (!process_fd_table[i].active) {
             process_fd_table[i].active = true;
             process_fd_table[i].inode = inode_num;
             process_fd_table[i].offset = 0;
-            return i;
+            return i; // Возвращаем файловый дескриптор (fd)
         }
     }
-    return -2;
+
+    return -2; // Нет свободных дескрипторов
 }
 
+// Реализация sys_close
 int32_t sys_close(int fd) {
     if (fd >= 3 && fd < MAX_OPEN_FILES) {
         process_fd_table[fd].active = false;
@@ -85,10 +103,12 @@ int32_t sys_close(int fd) {
     return -1;
 }
 
+// Получение PID процесса
 int32_t sys_getpid(void) {
-    return 1;
+    return 1; // Процесс init с PID 1
 }
 
+// Завершение процесса
 void sys_exit(int code) {
     (void)code;
     while (1) {
@@ -96,9 +116,7 @@ void sys_exit(int code) {
     }
 }
 
-extern uint32_t *os_framebuffer;
-extern void virtio_gpu_redraw(void);
-
+// Главный диспетчер системных вызовов (прерывание int 0x80)
 int32_t syscall_handler(Registers *regs) {
     int32_t ret = -1;
 
@@ -125,14 +143,6 @@ int32_t syscall_handler(Registers *regs) {
             break;
         case SYS_GETPID:
             ret = sys_getpid();
-            break;
-        case SYS_GET_FB:
-            ret = (int32_t)(uintptr_t)os_framebuffer;
-            break;
-        case SYS_SWAP:
-            swap_buffers(0);
-            virtio_gpu_redraw();
-            ret = 0;
             break;
         default:
             ret = -1;

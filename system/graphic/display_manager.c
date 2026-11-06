@@ -56,7 +56,7 @@ int display_manager_init_hardware_cursor(void *cursor_rgba_buffer) {
 
     static const char cursor16[16][16] = {
      {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}, {1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-     {1,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0}, {1,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0},
+     {1,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0}, {1,2,2,1,0,0,0,0,0,0,0,0,0,0,0},
      {1,2,2,2,1,0,0,0,0,0,0,0,0,0,0,0}, {1,2,2,2,2,1,0,0,0,0,0,0,0,0,0,0},
      {1,2,2,2,2,2,1,0,0,0,0,0,0,0,0,0}, {1,2,2,2,2,2,2,1,0,0,0,0,0,0,0,0},
      {1,2,2,2,2,2,2,2,1,0,0,0,0,0,0,0}, {1,2,2,2,2,2,1,1,1,1,0,0,0,0,0,0},
@@ -136,8 +136,8 @@ int display_manager_init_hardware_cursor(void *cursor_rgba_buffer) {
     global_dma_cursor_cmd.flags = DM_FLAG_FENCE;
     global_dma_cursor_cmd.fence_id = cursor_fence_counter++;
     global_dma_cursor_cmd.scanout_id = 0;
-    global_dma_cursor_cmd.x = 1920 / 2;
-    global_dma_cursor_cmd.y = 1080 / 2;
+    global_dma_cursor_cmd.x = 512;
+    global_dma_cursor_cmd.y = 384;
     global_dma_cursor_cmd.resource_id = DM_CURSOR_RESOURCE_ID;
     global_dma_cursor_cmd.hot_x = 1;
     global_dma_cursor_cmd.hot_y = 1;
@@ -180,7 +180,7 @@ int display_manager_update_region(uint32_t x, uint32_t y, uint32_t w, uint32_t h
 
     cmd_trans.type = DM_CMD_TRANSFER_TO_HOST_2D;
     cmd_trans.rx = x; cmd_trans.ry = y; cmd_trans.rwidth = w; cmd_trans.rheight = h;
-    cmd_trans.offset = (uint64_t)((y * 1920 + x) * 4);
+    cmd_trans.offset = (uint64_t)((y * 1024 + x) * 4);
     cmd_trans.resource_id = DM_SCREEN_RESOURCE_ID;
 
     status = virtio_dev_send_command(&my_gpu, 0, &cmd_trans, sizeof(cmd_trans), &resp_hdr, sizeof(resp_hdr));

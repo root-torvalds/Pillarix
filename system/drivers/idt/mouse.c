@@ -108,8 +108,8 @@ void mouse_handler_c() {
 
         if (mouse_x < 0)    mouse_x = 0;
         if (mouse_y < 0)    mouse_y = 0;
-        if (mouse_x > 1919) mouse_x = 1919;
-        if (mouse_y > 1079)  mouse_y = 1079;
+        if (mouse_x > 1023) mouse_x = 1023;
+        if (mouse_y > 767)  mouse_y = 767;
 
         has_mouse_event = 1;
 

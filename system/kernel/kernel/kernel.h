@@ -1,5 +1,7 @@
 #pragma once
 
+#define KBD_BUFFER_SIZE 256
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -31,6 +33,10 @@ extern volatile uint8_t last_scancode;
 #include "../../graphic/print.h"
 #include "../../graphic/screen.h"
 #include "../../graphic/display_manager.h"
+#include "../../graphic/qt.h"
+
+// Подключения из system/myc/
+#include "../../myc/compile/compiler.h"
 
 #ifdef __cplusplus
 }

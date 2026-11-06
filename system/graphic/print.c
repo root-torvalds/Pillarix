@@ -32,7 +32,7 @@
 
                 // Рисуем пиксель только в том случае, если итоговая прозрачность больше нуля
                 if (final_alpha > 0) {
-                    draw_pixel(glyph_x + col, glyph_y + row, r, g, b, (unsigned char)final_alpha);
+                    drawPoint(glyph_x + col, glyph_y + row, r, g, b, (unsigned char)final_alpha);
                 }
             }
         }
