@@ -104,9 +104,6 @@ void init_kernel() {
     init_ahci();
     printf("[KERNEL] Initializing AHCI...", 50, 550, 255, 255, 0, 255);
     swapBuffers(0);
-    init_ext4();
-    printf("[KERNEL] Initializing Ext4...", 50, 600, 255, 255, 0, 255);
-    swapBuffers(0);
 }
 
 static void redraw_input_line(int line_num, const char* cmd_str, int cmd_len, int cur_pos, int show_cursor) {
@@ -141,9 +138,7 @@ char edit_buffer[4096] = {0};
 int edit_buf_len = 0;
 extern char active_edit_filename[];
 
-// Сервис обработки сканкодов клавиатуры, шелла и редактора файлов
 static void handle_keyboard_scancode(uint8_t current_scancode, char* command, int* i, int* cursor_pos, int* o, int* sh) {
-    // Отслеживание нажатий/отпусканий Shift (левый и правый)
     if (current_scancode == 0x2A) {
         *sh = 1; // Left Shift press
     } else if (current_scancode == 0xAA) {
@@ -159,8 +154,8 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
     } else if (in_edit_mode) {
         // --- РЕЖИМ РЕДАКТИРОВАНИЯ ФАЙЛА (edit) ---
         if (current_scancode == 0x1C) { // Enter
-            if (rshift_down) {
-                // RShift + Enter: Сохранение файла и выход в терминал
+            if (*sh || rshift_down) {
+                // Shift + Enter (любой Shift): Сохранение файла и выход в терминал
                 ext4_create_file("/", active_edit_filename, 0x8180, edit_buffer, edit_buf_len);
                 in_edit_mode = 0;
                 fillScreen(0, 0, 0, 255);
@@ -219,7 +214,20 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
                 command[*i] = '\0';
             }
         } else if (current_scancode == 0x1C) { // Enter
-            redraw_input_line(*o, command, *i, *cursor_pos, 0);
+            // Стираем текущую строку ввода полностью перед выполнением команды,
+            // чтобы приглашение не оставалось на старом месте
+            int start_y = (*o) * LINE_HEIGHT;
+            for (int py = start_y - 15; py < start_y + 8; py++) {
+                for (int px = 0; px < 800; px++) {
+                    drawPoint(px, py, 0, 0, 0, 255);
+                }
+            }
+            // Дублируем введенную команду на экран в историю, чтобы она не пропадала
+            printf(">", 0, start_y, 255, 255, 255, 255);
+            for (int idx = 0; idx < *i; idx++) {
+                char str[2] = { command[idx], '\0' };
+                printf(str, 15 + (idx * 10), start_y, 255, 255, 255, 255);
+            }
 
             if (*i > 0) {
                 command[*i] = '\0';
@@ -242,6 +250,9 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
             *i = 0;
             *cursor_pos = 0;
             for (int f = 0; f < 512; f++) command[f] = 0;
+
+            // Рисуем новое приглашение на новой строке
+            redraw_input_line(*o, command, *i, *cursor_pos, 1);
         } else {
             char ascii = 0;
             if (current_scancode == 0x39) {
@@ -348,10 +359,6 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
         while(1) { __asm__ volatile("hlt"); }
     }
 
-    ext4_create_dir("/", "hello_world");
-    ext4_create_file("/hello_world", "hello_world.txt", 0x1A4, "Hello World from Kernel!", 24);
-
-
     for (volatile int i = 0; i < 10000000; i++) {
         __asm__ volatile("nop");
     }
@@ -374,14 +381,12 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
     uint32_t cursor_ticks = 0;
     int cursor_visible = 1;
 
-    // Первоначальный вывод приглашения и курсора
     redraw_input_line(o, command, i, cursor_pos, cursor_visible);
 
     extern volatile uint8_t kbd_ring_buffer[];
     extern volatile int kbd_head;
     extern volatile int kbd_tail;
 
-    // Внешние переменные редактора (объявлены выше или здесь)
     extern int in_edit_mode;
     extern char edit_buffer[];
     extern int edit_buf_len;
@@ -400,7 +405,6 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
             }
         }
 
-        // --- Обработка событий клавиатуры из кольцевого буфера ---
         while (kbd_head != kbd_tail) {
             uint8_t current_scancode = kbd_ring_buffer[kbd_tail];
             kbd_tail = (kbd_tail + 1) % KBD_BUFFER_SIZE;

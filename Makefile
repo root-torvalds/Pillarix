@@ -64,7 +64,7 @@ build: | build_dir $(OBJS)
 	mmd -i iso_root/efiboot.img ::/EFI/BOOT
 	mcopy -i iso_root/efiboot.img BOOTX64.EFI ::/EFI/BOOT/BOOTX64.EFI
 
-	xorriso -as mkisofs -R -f -e efiboot.img -no-emul-boot -o analos.iso iso_root
+	xorriso -as mkisofs -R -f -e efiboot.img -no-emul-boot -o pillarix.iso iso_root
 
 build/%.o: %.c | build_dir
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -89,7 +89,7 @@ run:
 		-display sdl \
 		-net none \
 		-serial stdio \
-		-cdrom analos.iso \
+		-cdrom pillarix.iso \
 		-drive id=ahcidisk,file=disk.img,if=none,format=raw,cache=writethrough \
 		-device ahci,id=ahci \
 		-device ide-hd,drive=ahcidisk,bus=ahci.0 \
@@ -100,7 +100,7 @@ run:
 		-D qemu.log
 
 clean:
-	rm -f BOOTX64.EFI analos.iso
+	rm -f BOOTX64.EFI pillarix.iso
 	rm -rf iso_root
 	rm -rf build
 

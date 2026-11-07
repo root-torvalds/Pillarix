@@ -59,7 +59,6 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
 
     int is_quoted = (cmd && cmd[0] == '"');
 
-    // Проверяем, есть ли закрывающая кавычка, если строка началась с кавычки
     if (is_quoted) {
         int has_closing = 0;
         for (int k = 1; cmd[k] != '\0'; k++) {
@@ -86,16 +85,19 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         return 1;
     }
 
+    extern int ext4_install(int x, int y);
+
     if (term_strcmp(argv[0], "help") == 0) {
         printf("Available commands:", out_x, out_y, 200, 200, 200, 255);
-        printf("  ver    - Display OS version", out_x, out_y + line_height, 150, 150, 150, 255);
-        printf("  clear  - Clear terminal screen", out_x, out_y + line_height * 2, 150, 150, 150, 255);
-        printf("  reboot - Restart the system", out_x, out_y + line_height * 3, 150, 150, 150, 255);
-        printf("  ls     - List directory contents", out_x, out_y + line_height * 4, 150, 150, 150, 255);
-        printf("  cat    - Display file contents", out_x, out_y + line_height * 5, 150, 150, 150, 255);
-        printf("  touch  - Create an empty file", out_x, out_y + line_height * 6, 150, 150, 150, 255);
-        printf("  edit   - Edit file (RShift+Enter to save)", out_x, out_y + line_height * 7, 150, 150, 150, 255);
-        return 8;
+        printf("  ver     - Display OS version", out_x, out_y + line_height, 150, 150, 150, 255);
+        printf("  clear   - Clear terminal screen", out_x, out_y + line_height * 2, 150, 150, 150, 255);
+        printf("  reboot  - Restart the system", out_x, out_y + line_height * 3, 150, 150, 150, 255);
+        printf("  ls      - List directory contents", out_x, out_y + line_height * 4, 150, 150, 150, 255);
+        printf("  cat     - Display file contents", out_x, out_y + line_height * 5, 150, 150, 150, 255);
+        printf("  touch   - Create an empty file", out_x, out_y + line_height * 6, 150, 150, 150, 255);
+        printf("  edit    - Edit file (RShift+Enter to save)", out_x, out_y + line_height * 7, 150, 150, 150, 255);
+        printf("  install - Format disk and install OS", out_x, out_y + line_height * 8, 150, 150, 150, 255);
+        return 9;
     } else if (term_strcmp(argv[0], "ver") == 0) {
         printf("Pillarix OS v4-alpha", out_x, out_y, 0, 255, 100, 255);
         return 1;
@@ -124,7 +126,6 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
                 }
                 full_path[idx] = '\0';
             }
-
             return ext4_cat(full_path, out_x, out_y);
         } else {
             printf("Usage: cat <filename>", out_x, out_y, 255, 80, 80, 255);
@@ -132,7 +133,24 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         }
     } else if (term_strcmp(argv[0], "touch") == 0) {
         if (argc > 1) {
-            ext4_create_file("/", argv[1], 0x8180, "", 0);
+            char full_path[300];
+            if (argv[1][0] != '/') {
+                full_path[0] = '/';
+                int idx = 0;
+                while (argv[1][idx] != '\0' && idx < 290) {
+                    full_path[idx + 1] = argv[1][idx];
+                    idx++;
+                }
+                full_path[idx + 1] = '\0';
+            } else {
+                int idx = 0;
+                while (argv[1][idx] != '\0' && idx < 290) {
+                    full_path[idx] = argv[1][idx];
+                    idx++;
+                }
+                full_path[idx] = '\0';
+            }
+            ext4_create_file("/", full_path + 1, 0x8180, "", 0);
             printf("File created successfully", out_x, out_y, 0, 255, 0, 255);
             return 1;
         } else {
@@ -141,15 +159,38 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         }
     } else if (term_strcmp(argv[0], "edit") == 0) {
         if (argc > 1) {
-            for (int k = 0; argv[1][k] != '\0' && k < 255; k++) {
-                active_edit_filename[k] = argv[1][k];
-                active_edit_filename[k+1] = '\0';
+            char full_path[300];
+            if (argv[1][0] != '/') {
+                full_path[0] = '/';
+                int idx = 0;
+                while (argv[1][idx] != '\0' && idx < 290) {
+                    full_path[idx + 1] = argv[1][idx];
+                    idx++;
+                }
+                full_path[idx + 1] = '\0';
+            } else {
+                int idx = 0;
+                while (argv[1][idx] != '\0' && idx < 290) {
+                    full_path[idx] = argv[1][idx];
+                    idx++;
+                }
+                full_path[idx] = '\0';
             }
+            int src_idx = (full_path[0] == '/') ? 1 : 0;
+            int dest_idx = 0;
+            while (full_path[src_idx] != '\0' && dest_idx < 255) {
+                active_edit_filename[dest_idx++] = full_path[src_idx++];
+            }
+            active_edit_filename[dest_idx] = '\0';
             return -2;
         } else {
             printf("Usage: edit <filename>", out_x, out_y, 255, 80, 80, 255);
             return 1;
         }
+    } else if (term_strcmp(argv[0], "install") == 0) {
+        mkfs_ext4();
+        printf("OS installed successfully! Filesystem formatted.", out_x, out_y, 0, 255, 0, 255);
+        return 1;
     } else if (term_strcmp(argv[0], "clear") == 0) {
         return -1;
     }
