@@ -26,7 +26,6 @@ C_SRCS = boot/bootloader.c \
          system/graphic/print.c \
          system/kernel/alloc/allocate.c \
          system/drivers/fs/ext4.c \
-         system/kernel/syscalls/syscalls.c \
          system/drivers/virtio/virtio_pci.c \
          system/drivers/virtio/virtio_gpu.c \
          system/drivers/virtio/virtio_gpu_proto.c \
@@ -34,7 +33,7 @@ C_SRCS = boot/bootloader.c \
          system/kernel/idt/apic.c \
          system/drivers/idt/hda.c \
          system/graphic/display_manager.c \
-         system/myc/compile/compiler.c \
+         system/msh/compile/compiler.c \
          system/graphic/qt.c
 
 CXX_SRCS = system/drivers/virtio/virtio_gpu_cmd.cpp
@@ -46,7 +45,7 @@ CXX_OBJS = $(addprefix build/, $(notdir $(CXX_SRCS:.cpp=_cpp.o)))
 
 OBJS = $(C_OBJS) $(CXX_OBJS) $(ASM_OBJS)
 
-vpath %.c boot system system/kernel/kernel system/graphic system/kernel/idt system/drivers/idt system/kernel/alloc system/drivers/fs system/kernel/syscalls system/drivers/virtio system/myc/compile
+vpath %.c boot system system/kernel/kernel system/graphic system/kernel/idt system/drivers/idt system/kernel/alloc system/drivers/fs system/drivers/virtio system/msh/compile
 vpath %.cpp system/drivers/idt system/drivers/virtio
 vpath %.asm system/kernel/idt
 

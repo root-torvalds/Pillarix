@@ -337,14 +337,375 @@ void init_ext4(void) {
     mkfs_ext4();
 }
 
-uint32_t ext4_find_inode_by_path(const char* path) {
-    (void)path;
-    return 2;
+// Вспомогательная функция чтения блока Ext4 (1 блок = 2 сектора по 512 байт)
+static void read_block(uint32_t block_num, uint8_t *buf) {
+    ahci_read_sector((uint64_t)block_num * 2, buf);
+    ahci_read_sector((uint64_t)block_num * 2 + 1, buf + 512);
 }
 
-bool ext4_create_file(const char* path, const char* name, uint16_t mode, const void* data, uint32_t data_size) {
-    (void)path; (void)name; (void)mode; (void)data; (void)data_size;
+// Чтение структуры инноды из таблицы иннод (блоки 5–13)
+static bool read_inode(uint32_t inode_num, Ext4Inode *out_inode) {
+    if (inode_num == 0 || inode_num > 256) return false;
+
+    uint32_t idx = inode_num - 1;
+    uint32_t block_idx = idx / 4; // Индекс блока относительно начала таблицы (Блок 5)
+    uint32_t byte_off = (idx % 4) * 256;
+
+    uint8_t table_block[1024];
+    read_block(5 + block_idx, table_block);
+
+    Ext4Inode *inode = (Ext4Inode *)(table_block + byte_off);
+    *out_inode = *inode;
     return true;
+}
+
+// Получение первого блока данных инноды через Extents (для depth = 0)
+static uint32_t get_inode_block(const Ext4Inode *inode) {
+    // Проверяем флаг extents (0x00080000)
+    struct ext4_extent_header *eh = (struct ext4_extent_header *)inode->i_block;
+    if (eh->eh_magic == 0xF30A && eh->eh_entries > 0) {
+        struct ext4_extent *ext = (struct ext4_extent *)(inode->i_block + sizeof(struct ext4_extent_header));
+        return ext->e_ee_start_lo;
+    }
+    return 0;
+}
+
+// Реализация поиска инноды по строковому пути (поддерживает уровень 1 и корень)
+uint32_t ext4_find_inode_by_path(const char* path) {
+    if (!path || path[0] != '/') return 0;
+
+    // Если корень
+    if (path[1] == '\0') return 2; // Inode 2 — это root '/'
+
+    // Пропускаем ведущий слэш
+    const char *name_ptr = path + 1;
+
+    // Читаем корневой каталог (Inode 2)
+    Ext4Inode root_inode;
+    if (!read_inode(2, &root_inode)) return 0;
+
+    uint32_t root_block = get_inode_block(&root_inode);
+    if (root_block == 0) return 0;
+
+    uint8_t dir_buf[1024];
+    read_block(root_block, dir_buf);
+
+    // Парсим записи директории в поисках совпадения имени
+    uint32_t offset = 0;
+    while (offset < 1024) {
+        Ext4DirectoryEntry *de = (Ext4DirectoryEntry *)(dir_buf + offset);
+        if (de->rec_len == 0 || de->inode == 0) break;
+
+        // Сравниваем имя записи с искомым
+        bool match = true;
+        for (int i = 0; i < de->name_len; i++) {
+            if (name_ptr[i] != de->name[i] || name_ptr[i] == '\0') {
+                match = false;
+                break;
+            }
+        }
+        // Убедимся, что строка закончилась одновременно
+        if (match && name_ptr[de->name_len] == '\0' && de->name_len > 0) {
+            return de->inode;
+        }
+
+        offset += de->rec_len;
+    }
+
+    return 0; // Не найдено
+}
+
+// Функция вывода содержимого директории с возвратом количества строк
+int ext4_ls(const char* path, int x, int y) {
+    uint32_t ino = ext4_find_inode_by_path(path);
+    if (ino == 0) {
+        printf("ls: No such file or directory", x, y, 255, 255, 255, 255);
+        return 1;
+    }
+
+    Ext4Inode inode;
+    if (!read_inode(ino, &inode)) {
+        printf("ls: failed to read inode", x, y, 255, 255, 255, 255);
+        return 1;
+    }
+
+    // Если передан путь к обычному файлу, выводим только его имя
+    if ((inode.i_mode & 0xF000) != 0x4000) {
+        printf(path, x, y, 255, 255, 255, 255);
+        return 1;
+    }
+
+    uint32_t block_num = get_inode_block(&inode);
+    if (block_num == 0) {
+        return 0; // Пустой каталог
+    }
+
+    uint8_t dir_buf[1024];
+    read_block(block_num, dir_buf);
+
+    uint32_t offset = 0;
+    int current_y = y;
+    int line_height = 20; // Исправлено с 16 на 20 в соответствии с шагом терминала
+    int lines_printed = 0;
+
+    while (offset < 1024) {
+        Ext4DirectoryEntry *de = (Ext4DirectoryEntry *)(dir_buf + offset);
+        if (de->rec_len == 0 || de->inode == 0) break;
+
+        char name_buf[256];
+        int len = de->name_len;
+        if (len > 255) len = 255;
+
+        for (int i = 0; i < len; i++) {
+            name_buf[i] = de->name[i];
+        }
+        name_buf[len] = '\0';
+
+        char display_buf[300];
+        int idx = 0;
+        while (name_buf[idx] != '\0' && idx < 280) {
+            display_buf[idx] = name_buf[idx];
+            idx++;
+        }
+
+        if (de->file_type == 2) {
+            display_buf[idx++] = '/';
+        }
+        display_buf[idx] = '\0';
+
+        printf(display_buf, x, current_y, 255, 255, 255, 255);
+
+        current_y += line_height;
+        lines_printed++;
+        offset += de->rec_len;
+    }
+
+    return lines_printed;
+}
+
+// Счетчик свободных блоков для новых файлов (начиная с 1150)
+static uint32_t next_free_file_block = 1150;
+
+bool ext4_create_file(const char* path, const char* name, uint16_t mode, const void* data, uint32_t data_size) {
+    uint32_t parent_ino = ext4_find_inode_by_path(path);
+    if (parent_ino == 0) parent_ino = 2; // Корень по умолчанию
+
+    Ext4Inode parent_inode;
+    if (!read_inode(parent_ino, &parent_inode)) return false;
+    uint32_t parent_block = get_inode_block(&parent_inode);
+    if (parent_block == 0) return false;
+
+    uint8_t dir_buf[1024];
+    read_block(parent_block, dir_buf);
+
+    // Проверяем, существует ли файл уже
+    uint32_t offset = 0;
+    uint32_t existing_ino = 0;
+    while (offset < 1024) {
+        Ext4DirectoryEntry *de = (Ext4DirectoryEntry *)(dir_buf + offset);
+        if (de->rec_len == 0 || de->inode == 0) break;
+
+        int match = 1;
+        int n = 0;
+        while (n < de->name_len && name[n] != '\0') {
+            if (de->name[n] != name[n]) { match = 0; break; }
+            n++;
+        }
+        if (match && de->name_len == n && name[n] == '\0') {
+            existing_ino = de->inode;
+            break;
+        }
+        offset += de->rec_len;
+    }
+
+    if (existing_ino != 0) {
+        // Файл существует — обновляем размер,extent и данные в его блоке
+        Ext4Inode file_inode;
+        if (!read_inode(existing_ino, &file_inode)) return false;
+        uint32_t file_block = get_inode_block(&file_inode);
+        if (file_block == 0) {
+            file_block = next_free_file_block++;
+        }
+
+        if (data && data_size > 0) {
+            uint8_t block_buf[1024];
+            for(int i = 0; i < 1024; i++) block_buf[i] = 0;
+            uint32_t copy_size = data_size > 1024 ? 1024 : data_size;
+            for(uint32_t i = 0; i < copy_size; i++) block_buf[i] = ((const uint8_t*)data)[i];
+            write_block(file_block, block_buf);
+        }
+
+        uint32_t idx = existing_ino - 1;
+        uint32_t block_idx = idx / 4;
+        uint32_t byte_off = (idx % 4) * 256;
+        uint8_t table_block[1024];
+        read_block(5 + block_idx, table_block);
+
+        Ext4Inode *ino_ptr = (Ext4Inode *)(table_block + byte_off);
+        ino_ptr->i_size_lo = data_size; // Точно проставляем реальный размер файла!
+        ino_ptr->i_links_count = 1;
+        ino_ptr->i_blocks_lo = 2;
+        ino_ptr->i_flags = 0x00080000;
+
+        struct ext4_extent_header *eh = (struct ext4_extent_header *)ino_ptr->i_block;
+        eh->eh_magic = 0xF30A;
+        eh->eh_entries = 1;
+        eh->eh_max = 4;
+        eh->eh_depth = 0;
+
+        struct ext4_extent *ext = (struct ext4_extent *)(ino_ptr->i_block + sizeof(struct ext4_extent_header));
+        ext->e_ee_block = 0;
+        ext->e_ee_len = 1;
+        ext->e_ee_start_lo = file_block;
+        ext->e_ee_start_hi = 0;
+
+        write_block(5 + block_idx, table_block);
+        return true;
+    } else {
+        // Создаем новый файл с уникальным блоком
+        uint32_t new_ino = 35;
+        for (uint32_t i = 35; i <= 256; i++) {
+            Ext4Inode test_inode;
+            if (read_inode(i, &test_inode) && test_inode.i_links_count == 0) {
+                new_ino = i;
+                break;
+            }
+        }
+
+        uint32_t new_block = next_free_file_block++;
+
+        if (data && data_size > 0) {
+            uint8_t block_buf[1024];
+            for(int i = 0; i < 1024; i++) block_buf[i] = 0;
+            uint32_t copy_size = data_size > 1024 ? 1024 : data_size;
+            for(uint32_t i = 0; i < copy_size; i++) block_buf[i] = ((const uint8_t*)data)[i];
+            write_block(new_block, block_buf);
+        }
+
+        uint32_t idx = new_ino - 1;
+        uint32_t block_idx = idx / 4;
+        uint32_t byte_off = (idx % 4) * 256;
+        uint8_t table_block[1024];
+        read_block(5 + block_idx, table_block);
+        Ext4Inode *inode = (Ext4Inode *)(table_block + byte_off);
+        inode->i_mode = mode;
+        inode->i_size_lo = data_size;
+        inode->i_links_count = 1;
+        inode->i_blocks_lo = 2;
+        inode->i_flags = 0x00080000;
+        struct ext4_extent_header *eh = (struct ext4_extent_header *)inode->i_block;
+        eh->eh_magic = 0xF30A;
+        eh->eh_entries = 1;
+        eh->eh_max = 4;
+        eh->eh_depth = 0;
+        struct ext4_extent *ext = (struct ext4_extent *)(inode->i_block + sizeof(struct ext4_extent_header));
+        ext->e_ee_block = 0;
+        ext->e_ee_len = 1;
+        ext->e_ee_start_lo = new_block;
+        ext->e_ee_start_hi = 0;
+        write_block(5 + block_idx, table_block);
+
+        offset = 0;
+        uint32_t last_offset = 0;
+        while (offset < 1024) {
+            Ext4DirectoryEntry *de = (Ext4DirectoryEntry *)(dir_buf + offset);
+            if (de->rec_len == 0 || de->inode == 0) break;
+            last_offset = offset;
+            offset += de->rec_len;
+        }
+
+        if (last_offset > 0) {
+            Ext4DirectoryEntry *last_de = (Ext4DirectoryEntry *)(dir_buf + last_offset);
+            int actual_len = (8 + last_de->name_len + 3) & ~3;
+            last_de->rec_len = actual_len;
+
+            uint32_t new_entry_offset = last_offset + actual_len;
+            int name_len = 0;
+            while (name[name_len] != '\0') name_len++;
+
+            Ext4DirectoryEntry *new_de = (Ext4DirectoryEntry *)(dir_buf + new_entry_offset);
+            new_de->inode = new_ino;
+            new_de->name_len = name_len;
+            new_de->file_type = 1; // Обычный файл
+            for (int n = 0; n < name_len; n++) new_de->name[n] = name[n];
+            new_de->rec_len = 1024 - new_entry_offset;
+
+            write_block(parent_block, dir_buf);
+        }
+        return true;
+    }
+}
+
+// Функция для вывода содержимого файла на экран (возвращает количество выведенных строк)
+int ext4_cat(const char* path, int x, int y) {
+    uint32_t ino = ext4_find_inode_by_path(path);
+    if (ino == 0) {
+        printf("cat: No such file or directory", x, y, 255, 80, 80, 255);
+        return 1;
+    }
+
+    Ext4Inode inode;
+    if (!read_inode(ino, &inode)) {
+        printf("cat: Failed to read inode", x, y, 255, 80, 80, 255);
+        return 1;
+    }
+
+    // Проверяем, что это обычный файл, а не директория
+    if ((inode.i_mode & 0xF000) == 0x4000) {
+        printf("cat: Is a directory", x, y, 255, 80, 80, 255);
+        return 1;
+    }
+
+    uint32_t block_num = get_inode_block(&inode);
+    if (block_num == 0) {
+        return 0; // Блок не выделен
+    }
+
+    uint8_t file_buf[1024];
+    read_block(block_num, file_buf);
+
+    // Если размер инноды по какой-то причине нулевой, но блок есть — читаем до 1024 байт
+    uint32_t file_size = inode.i_size_lo;
+    if (file_size == 0) {
+        file_size = 1024;
+    } else if (file_size > 1024) {
+        file_size = 1024;
+    }
+
+    int current_y = y;
+    int line_height = 20; // Шаг строки терминала
+    int lines_printed = 0;
+
+    char line_buffer[256];
+    int line_idx = 0;
+
+    for (uint32_t idx = 0; idx < file_size; idx++) {
+        char c = (char)file_buf[idx];
+
+        // Если дошли до конца строки / нулевого байта записанного текста — останавливаемся
+        if (c == '\0') {
+            break;
+        }
+
+        if (c == '\n' || line_idx >= 254) {
+            line_buffer[line_idx] = '\0';
+            printf(line_buffer, x, current_y, 255, 255, 255, 255);
+            current_y += line_height;
+            lines_printed++;
+            line_idx = 0;
+        } else if (c != '\r') {
+            line_buffer[line_idx++] = c;
+        }
+    }
+
+    // Выводим остаток текста, если в конце файла не было символа '\n'
+    if (line_idx > 0) {
+        line_buffer[line_idx] = '\0';
+        printf(line_buffer, x, current_y, 255, 255, 255, 255);
+        lines_printed++;
+    }
+
+    return lines_printed > 0 ? lines_printed : 1;
 }
 
 bool ext4_create_dir(const char* path, const char* name) {

@@ -6,6 +6,8 @@
 #define KBD_MOD_LALT     (1 << 3)
 #define KBD_MOD_SHIFT    (KBD_MOD_LSHIFT | KBD_MOD_RSHIFT)
 
+#define LINE_HEIGHT 20
+
 typedef struct {
     uint8_t modifiers;
     bool caps_lock;
@@ -21,7 +23,11 @@ extern int mouse_x;
 extern int mouse_y;
 
 static const char kbd_break_normal[256] = {
-    [0xA8] = '\'', [0x9E] = 'a',  [0xB0] = 'b',  [0xAE] = 'c',  [0xA0] = 'd',
+    [0x82] = '1',  [0x83] = '2',  [0x84] = '3',  [0x85] = '4',  [0x86] = '5',
+    [0x87] = '6',  [0x88] = '7',  [0x89] = '8',  [0x8A] = '9',  [0x8B] = '0',
+    [0x8C] = '-',  [0x8D] = '=',  [0xA9] = '`',  [0x9A] = '[',  [0x9B] = ']',
+    [0xA7] = ';',  [0xA8] = '\'', [0xB3] = ',',  [0xB4] = '.',  [0xB5] = '/',
+    [0xAB] = '\\', [0x9E] = 'a',  [0xB0] = 'b',  [0xAE] = 'c',  [0xA0] = 'd',
     [0x92] = 'e',  [0xA1] = 'f',  [0xA2] = 'g',  [0xA3] = 'h',  [0x97] = 'i',
     [0xA4] = 'j',  [0xA5] = 'k',  [0xA6] = 'l',  [0xB2] = 'm',  [0xB1] = 'n',
     [0x98] = 'o',  [0x99] = 'p',  [0x90] = 'q',  [0x93] = 'r',  [0x9F] = 's',
@@ -30,45 +36,16 @@ static const char kbd_break_normal[256] = {
 };
 
 static const char kbd_break_shift[256] = {
-    [0xA8] = '\"', [0x9E] = 'A',  [0xB0] = 'B',  [0xAE] = 'C',  [0xA0] = 'D',
+    [0x82] = '!',  [0x83] = '@',  [0x84] = '#',  [0x85] = '$',  [0x86] = '%',
+    [0x87] = '^',  [0x88] = '&',  [0x89] = '*',  [0x8A] = '(',  [0x8B] = ')',
+    [0x8C] = '_',  [0x8D] = '+',  [0xA9] = '~',  [0x9A] = '{',  [0x9B] = '}',
+    [0xA7] = ':',  [0xA8] = '\"', [0xB3] = '<',  [0xB4] = '>',  [0xB5] = '?',
+    [0xAB] = '|',  [0x9E] = 'A',  [0xB0] = 'B',  [0xAE] = 'C',  [0xA0] = 'D',
     [0x92] = 'E',  [0xA1] = 'F',  [0xA2] = 'G',  [0xA3] = 'H',  [0x97] = 'I',
     [0xA4] = 'J',  [0xA5] = 'K',  [0xA6] = 'L',  [0xB2] = 'M',  [0xB1] = 'N',
     [0x98] = 'O',  [0x99] = 'P',  [0x90] = 'Q',  [0x93] = 'R',  [0x9F] = 'S',
     [0x94] = 'T',  [0x96] = 'U',  [0xAF] = 'V',  [0x91] = 'W',  [0xAD] = 'X',
     [0x95] = 'Y',  [0xAC] = 'Z'
-};
-
-static const char qm[8][8] = {
-    {0,0,0,0,1,0,0,0},
-    {0,0,0,0,1,0,0,0},
-    {0,0,0,1,0,0,0,0},
-    {0,0,0,0,0,0,0,0},
-    {0,0,0,0,0,0,0,0},
-    {0,0,0,0,0,0,0,0},
-    {0,0,0,0,0,0,0,0},
-    {0,0,0,0,0,0,0,0}
-};
-
-static const char qms[8][8] = {
-    {0,0,0,1,0,0,1,0},
-    {0,0,0,1,0,0,1,0},
-    {0,0,1,0,0,1,0,0},
-    {0,0,0,0,0,0,0,0},
-    {0,0,0,0,0,0,0,0},
-    {0,0,0,0,0,0,0,0},
-    {0,0,0,0,0,0,0,0},
-    {0,0,0,0,0,0,0,0}
-};
-
-static const char gt_matrix[8][8] = {
-    {1, 0, 0, 0, 0, 0, 0, 0},
-    {0, 1, 0, 0, 0, 0, 0, 0},
-    {0, 0, 1, 0, 0, 0, 0, 0},
-    {0, 0, 0, 1, 0, 0, 0, 0},
-    {0, 0, 1, 0, 0, 0, 0, 0},
-    {0, 1, 0, 0, 0, 0, 0, 0},
-    {1, 0, 0, 0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0, 0}
 };
 
 void sys_reset(void) {
@@ -99,26 +76,7 @@ void sys_shutdown(void) {
     __asm__ __volatile__("cli; hlt");
 }
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-    void __attribute__((ms_abi)) screen_switch_to_virtio(void);
-    int  __attribute__((ms_abi)) init_virtio_gpu(void);
-
-    int  __attribute__((ms_abi)) virtio_gpu_setup_screen(void);
-#ifdef __cplusplus
-}
-#endif
-
-void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
-    if (!info) {
-        while(1) { __asm__ __volatile__("hlt"); }
-    }
-
-    initScreenDriver(info);
-    fillScreen(0, 0, 0, 255);
-    swapBuffers(0);
-
+void init_kernel() {
     init_idt();
     printf("[KERNEL] Initializing IDT...", 50, 150, 255, 255, 0, 255);
     swapBuffers(0);
@@ -149,6 +107,182 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
     init_ext4();
     printf("[KERNEL] Initializing Ext4...", 50, 600, 255, 255, 0, 255);
     swapBuffers(0);
+}
+
+static void redraw_input_line(int line_num, const char* cmd_str, int cmd_len, int cur_pos, int show_cursor) {
+    int start_y = line_num * LINE_HEIGHT;
+
+    // 1. Очищаем область строки черным цветом
+    for (int py = start_y - 15; py < start_y + 8; py++) {
+        for (int px = 0; px < 800; px++) {
+            drawPoint(px, py, 0, 0, 0, 255);
+        }
+    }
+
+    // 2. Рисуем приглашение
+    printf(">", 0, start_y, 255, 255, 255, 255);
+
+    // 3. Рисуем введенный текст символ за символом
+    for (int idx = 0; idx < cmd_len; idx++) {
+        char str[2] = { cmd_str[idx], '\0' };
+        printf(str, 15 + (idx * 10), start_y, 255, 255, 255, 255);
+    }
+
+    // 4. Рисуем мигающий курсор
+    if (show_cursor) {
+        int cur_x = 15 + (cur_pos * 10);
+        printf("_", cur_x, start_y, 0, 255, 255, 255);
+    }
+}
+
+static int rshift_down = 0;
+int in_edit_mode = 0;
+char edit_buffer[4096] = {0};
+int edit_buf_len = 0;
+extern char active_edit_filename[];
+
+// Сервис обработки сканкодов клавиатуры, шелла и редактора файлов
+static void handle_keyboard_scancode(uint8_t current_scancode, char* command, int* i, int* cursor_pos, int* o, int* sh) {
+    // Отслеживание нажатий/отпусканий Shift (левый и правый)
+    if (current_scancode == 0x2A) {
+        *sh = 1; // Left Shift press
+    } else if (current_scancode == 0xAA) {
+        *sh = 0; // Left Shift release
+    } else if (current_scancode == 0x36) {
+        *sh = 1;
+        rshift_down = 1; // Right Shift press
+    } else if (current_scancode == 0xB6) {
+        *sh = 0;
+        rshift_down = 0; // Right Shift release
+    } else if (current_scancode == 0x01) {
+        // ESC
+    } else if (in_edit_mode) {
+        // --- РЕЖИМ РЕДАКТИРОВАНИЯ ФАЙЛА (edit) ---
+        if (current_scancode == 0x1C) { // Enter
+            if (rshift_down) {
+                // RShift + Enter: Сохранение файла и выход в терминал
+                ext4_create_file("/", active_edit_filename, 0x8180, edit_buffer, edit_buf_len);
+                in_edit_mode = 0;
+                fillScreen(0, 0, 0, 255);
+                *o = 1;
+                printf("File saved successfully.", 0, (*o) * LINE_HEIGHT, 0, 255, 0, 255);
+                (*o) += 2;
+            } else {
+                // Обычный Enter — перевод строки внутри файла
+                if (edit_buf_len < 4095) {
+                    edit_buffer[edit_buf_len++] = '\n';
+                }
+            }
+        } else if (current_scancode == 0x0E) { // Backspace
+            if (edit_buf_len > 0) {
+                edit_buf_len--;
+                edit_buffer[edit_buf_len] = '\0';
+            }
+        } else {
+            char ascii = 0;
+            if (current_scancode == 0x39) {
+                ascii = ' ';
+            } else {
+                ascii = *sh ? kbd_break_shift[current_scancode] : kbd_break_normal[current_scancode];
+            }
+
+            if (ascii != 0 && edit_buf_len < 4095) {
+                edit_buffer[edit_buf_len++] = ascii;
+                edit_buffer[edit_buf_len] = '\0';
+            }
+        }
+    } else {
+        // --- ОБЫЧНЫЙ РЕЖИМ КОМАНДНОЙ СТРОКИ ---
+        if (current_scancode == 0x53) { // Delete
+            if (*cursor_pos < *i) {
+                for (int k = *cursor_pos; k < *i - 1; k++) {
+                    command[k] = command[k + 1];
+                }
+                (*i)--;
+                command[*i] = '\0';
+            }
+        } else if (current_scancode == 0x4B) { // Стрелка влево
+            if (*cursor_pos > 0) {
+                (*cursor_pos)--;
+            }
+        } else if (current_scancode == 0x4D) { // Стрелка вправо
+            if (*cursor_pos < *i) {
+                (*cursor_pos)++;
+            }
+        } else if (current_scancode == 0x0E) { // Backspace
+            if (*cursor_pos > 0) {
+                for (int k = *cursor_pos - 1; k < *i - 1; k++) {
+                    command[k] = command[k + 1];
+                }
+                (*i)--;
+                (*cursor_pos)--;
+                command[*i] = '\0';
+            }
+        } else if (current_scancode == 0x1C) { // Enter
+            redraw_input_line(*o, command, *i, *cursor_pos, 0);
+
+            if (*i > 0) {
+                command[*i] = '\0';
+                int result = terminal_execute_command(command, 0, *o, *o);
+
+                if (result == -1) { // clear
+                    fillScreen(0, 0, 0, 255);
+                    *o = 1;
+                } else if (result == -2) { // Запуск режима редактора (команда edit)
+                    in_edit_mode = 1;
+                    edit_buf_len = 0;
+                    for (int f = 0; f < 4096; f++) edit_buffer[f] = 0;
+                } else {
+                    *o += result + 1;
+                }
+            } else {
+                (*o)++;
+            }
+
+            *i = 0;
+            *cursor_pos = 0;
+            for (int f = 0; f < 512; f++) command[f] = 0;
+        } else {
+            char ascii = 0;
+            if (current_scancode == 0x39) {
+                ascii = ' ';
+            } else {
+                ascii = *sh ? kbd_break_shift[current_scancode] : kbd_break_normal[current_scancode];
+            }
+
+            if (ascii != 0 && *i < 510) {
+                for (int k = *i; k > *cursor_pos; k--) {
+                    command[k] = command[k - 1];
+                }
+                command[*cursor_pos] = ascii;
+                (*i)++;
+                (*cursor_pos)++;
+                command[*i] = '\0';
+            }
+        }
+    }
+}
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+    void __attribute__((ms_abi)) screen_switch_to_virtio(void);
+    int  __attribute__((ms_abi)) init_virtio_gpu(void);
+
+    int  __attribute__((ms_abi)) virtio_gpu_setup_screen(void);
+#ifdef __cplusplus
+}
+#endif
+
+void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
+    if (!info) {
+        while(1) { __asm__ __volatile__("hlt"); }
+    }
+
+    initScreenDriver(info);
+    fillScreen(0, 0, 0, 255);
+    swapBuffers(0);
+    init_kernel();
 
     printf("[KERNEL] Initializing VirtIO GPU Transport...", 50, 650, 255, 255, 0, 255);
     int res = init_virtio_gpu();
@@ -228,111 +362,81 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
     static uint32_t last_sent_mouse_x = 9999;
     static uint32_t last_sent_mouse_y = 9999;
 
-    mouse_x = 512;
-    mouse_y = 384;
-
     fillScreen(0, 0, 0, 255);
     swapBuffers(0);
 
-    char command[512];
-    char null[256] = {0};
-    int i = 0;
-    int o = 1;
-    int x = 0;
+    char command[512] = {0};
+    int i = 0;          // Длина введенной строки
+    int o = 1;          // Номер текущей строки консоли
+    int cursor_pos = 0; // Позиция курсора
+    int sh = 0;
 
-    {
-        int gt_x = 0;
-        int gt_y = (o * 15) - 8;
-        for (int row = 0; row < 8; row++) {
-            for (int col = 0; col < 8; col++) {
-                if (gt_matrix[row][col]) {
-                    drawPoint(gt_x + col, gt_y + row, 255, 255, 255, 255);
-                } else {
-                    drawPoint(gt_x + col, gt_y + row, 0, 0, 0, 255);
-                }
-            }
-        }
-    }
+    uint32_t cursor_ticks = 0;
+    int cursor_visible = 1;
+
+    // Первоначальный вывод приглашения и курсора
+    redraw_input_line(o, command, i, cursor_pos, cursor_visible);
 
     extern volatile uint8_t kbd_ring_buffer[];
     extern volatile int kbd_head;
     extern volatile int kbd_tail;
 
+    // Внешние переменные редактора (объявлены выше или здесь)
+    extern int in_edit_mode;
+    extern char edit_buffer[];
+    extern int edit_buf_len;
+    extern char active_edit_filename[];
+
     while (1) {
         __asm__ __volatile__("hlt");
-        static int sh = 0;
-        int need_swap = 0;
+        int need_redraw = 0;
 
+        // --- Мигание курсора (только в обычном режиме терминала) ---
+        if (!in_edit_mode) {
+            cursor_ticks++;
+            if (cursor_ticks % 10 == 0) {
+                cursor_visible = !cursor_visible;
+                need_redraw = 1;
+            }
+        }
+
+        // --- Обработка событий клавиатуры из кольцевого буфера ---
         while (kbd_head != kbd_tail) {
             uint8_t current_scancode = kbd_ring_buffer[kbd_tail];
             kbd_tail = (kbd_tail + 1) % KBD_BUFFER_SIZE;
 
-            need_swap = 1;
+            handle_keyboard_scancode(current_scancode, command, &i, &cursor_pos, &o, &sh);
 
-            if (current_scancode == 0x2A || current_scancode == 0x36) {
-                sh = 1;
-            } else if (current_scancode == 0xAA || current_scancode == 0xB6) {
-                sh = 0;
-            } else if (current_scancode == 0x01) {
-                sys_reset();
-            } else if (current_scancode == 0x1C) {
-                if (x > 0) {
-                    command[x] = '\0';
-                    int lines_used = terminal_execute_command(command, 0, o, o);
-                    o = o + 1 + lines_used;
-                } else {
-                    o++;
-                }
-                i = 0;
-                x = 0;
-                for (int f = 0; f < 512; f++) command[f] = 0;
+            need_redraw = 1;
+            cursor_visible = 1; // При нажатии курсор всегда виден
+            cursor_ticks = 0;   // Сброс таймера мигания
+        }
 
-                {
-                    int gt_x = 0;
-                    int gt_y = (o * 15) - 8;
-                    for (int row = 0; row < 8; row++) {
-                        for (int col = 0; col < 8; col++) {
-                            if (gt_matrix[row][col]) {
-                                drawPoint(gt_x + col, gt_y + row, 255, 255, 255, 255);
-                            } else {
-                                drawPoint(gt_x + col, gt_y + row, 0, 0, 0, 255);
-                            }
-                        }
-                    }
-                }
-            } else if (current_scancode == 0x39) { // Space
-                if (i >= 128) { o++; i = 0; }
-                printf(" ", i * 15, o * 15, 255, 255, 255, 255);
-                command[x] = ' ';
-                i++; x++;
-            } else {
-                char ascii = sh ? kbd_break_shift[current_scancode] : kbd_break_normal[current_scancode];
-                if (ascii != 0) {
-                    if (i >= 128) { o++; i = 0; }
+        // --- Перерисовка экрана при изменениях ---
+        if (need_redraw) {
+            if (in_edit_mode) {
+                // Рендеринг содержимого файла в режиме редактора
+                fillScreen(0, 0, 0, 255);
+                printf("--- EDITING FILE (Press RShift+Enter to save & exit) ---", 0, 20, 200, 200, 0, 255);
 
-                    int start_x = 15 + (i * 15);
-                    int start_y = (o * 15) - 8;
-
-                    if (ascii == 34 || ascii == '\'') {
-                        const char (*matrix)[8] = (ascii == 34) ? qms : qm;
-
-                        for (int row = 0; row < 8; row++) {
-                            for (int col = 0; col < 8; col++) {
-                                if (matrix[row][col]) {
-                                    drawPoint(start_x + col, start_y + row, 255, 255, 255, 255);
-                                } else {
-                                    drawPoint(start_x + col, start_y + row, 0, 0, 0, 255);
-                                }
-                            }
-                        }
+                int cur_x = 0;
+                int cur_y = 50;
+                for (int idx = 0; idx < edit_buf_len; idx++) {
+                    if (edit_buffer[idx] == '\n') {
+                        cur_x = 0;
+                        cur_y += LINE_HEIGHT;
                     } else {
-                        char str[2] = { ascii, '\0' };
-                        printf(str, start_x, o * 15, 255, 255, 255, 255);
+                        char s[2] = { edit_buffer[idx], '\0' };
+                        printf(s, cur_x, cur_y, 255, 255, 255, 255);
+                        cur_x += 10;
+                        if (cur_x > 780) {
+                            cur_x = 0;
+                            cur_y += LINE_HEIGHT;
+                        }
                     }
-
-                    command[x] = ascii;
-                    i++; x++;
                 }
+            } else {
+                redraw_input_line(o, command, i, cursor_pos, cursor_visible);
             }
         } swapBuffers(0);
     }
