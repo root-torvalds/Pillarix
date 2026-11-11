@@ -112,8 +112,10 @@ typedef struct __attribute__((packed)) {
 
 // Интерфейсы Ext4 и встроенного mkfs
 void mkfs_ext4(void);
-bool ext4_create_file(const char* path, const char* name, uint16_t mode, const void* data, uint32_t data_size);
+int ext4_create_file(const char* path, const char* name, uint16_t mode, const void* data, uint32_t data_size);
 bool ext4_create_dir(const char* path, const char* name);
 uint32_t ext4_find_inode_by_path(const char* path);
 int ext4_ls(const char* path, int x, int y);
 int ext4_cat(const char* path, int x, int y);
+void ext4_split_path(const char* full_path, char* dir_out, char* name_out);
+int ext4_read_file_to_buffer(const char* path, void* buf, uint32_t max_size);

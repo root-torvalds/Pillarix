@@ -133,25 +133,26 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         }
     } else if (term_strcmp(argv[0], "touch") == 0) {
         if (argc > 1) {
-            char full_path[300];
-            if (argv[1][0] != '/') {
-                full_path[0] = '/';
-                int idx = 0;
-                while (argv[1][idx] != '\0' && idx < 290) {
-                    full_path[idx + 1] = argv[1][idx];
-                    idx++;
-                }
-                full_path[idx + 1] = '\0';
+            char dir_path[300];
+            char file_name[256];
+            ext4_split_path(argv[1], dir_path, file_name);
+
+            int res = ext4_create_file(dir_path, file_name, 0x8180, "", 0);
+            if (res == 0) {
+                printf("File created successfully", out_x, out_y, 0, 255, 0, 255);
             } else {
-                int idx = 0;
-                while (argv[1][idx] != '\0' && idx < 290) {
-                    full_path[idx] = argv[1][idx];
-                    idx++;
-                }
-                full_path[idx] = '\0';
+                // Выводим точный код ошибки для диагностики
+                char err_buf[64];
+                // Простая конвертация кода ошибки в строку или вывод текста
+                if (res == -1) printf("touch: err -1 (Parent dir not found)", out_x, out_y, 255, 80, 80, 255);
+                else if (res == -2) printf("touch: err -2 (Parent inode read fail)", out_x, out_y, 255, 80, 80, 255);
+                else if (res == -3) printf("touch: err -3 (Parent block is 0)", out_x, out_y, 255, 80, 80, 255);
+                else if (res == -4) printf("touch: err -4 (Dir block read fail)", out_x, out_y, 255, 80, 80, 255);
+                else if (res == -5) printf("touch: err -5 (File inode read fail)", out_x, out_y, 255, 80, 80, 255);
+                else if (res == -6) printf("touch: err -6 (AHCI disk write error)", out_x, out_y, 255, 80, 80, 255);
+                else if (res == -7) printf("touch: err -7 (Inode table write error)", out_x, out_y, 255, 80, 80, 255);
+                else printf("touch: failed with unknown code", out_x, out_y, 255, 80, 80, 255);
             }
-            ext4_create_file("/", full_path + 1, 0x8180, "", 0);
-            printf("File created successfully", out_x, out_y, 0, 255, 0, 255);
             return 1;
         } else {
             printf("Usage: touch <filename>", out_x, out_y, 255, 80, 80, 255);
@@ -159,30 +160,13 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         }
     } else if (term_strcmp(argv[0], "edit") == 0) {
         if (argc > 1) {
-            char full_path[300];
-            if (argv[1][0] != '/') {
-                full_path[0] = '/';
-                int idx = 0;
-                while (argv[1][idx] != '\0' && idx < 290) {
-                    full_path[idx + 1] = argv[1][idx];
-                    idx++;
-                }
-                full_path[idx + 1] = '\0';
-            } else {
-                int idx = 0;
-                while (argv[1][idx] != '\0' && idx < 290) {
-                    full_path[idx] = argv[1][idx];
-                    idx++;
-                }
-                full_path[idx] = '\0';
-            }
-            int src_idx = (full_path[0] == '/') ? 1 : 0;
             int dest_idx = 0;
-            while (full_path[src_idx] != '\0' && dest_idx < 255) {
-                active_edit_filename[dest_idx++] = full_path[src_idx++];
+            int src_idx = 0;
+            while (argv[1][src_idx] != '\0' && dest_idx < 255) {
+                active_edit_filename[dest_idx++] = argv[1][src_idx++];
             }
             active_edit_filename[dest_idx] = '\0';
-            return -2;
+            return -2; // Запуск графического редактора
         } else {
             printf("Usage: edit <filename>", out_x, out_y, 255, 80, 80, 255);
             return 1;

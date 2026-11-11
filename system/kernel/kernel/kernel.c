@@ -22,30 +22,30 @@ volatile uint8_t last_scancode = 0;
 extern int mouse_x;
 extern int mouse_y;
 
-static const char kbd_break_normal[256] = {
-    [0x82] = '1',  [0x83] = '2',  [0x84] = '3',  [0x85] = '4',  [0x86] = '5',
-    [0x87] = '6',  [0x88] = '7',  [0x89] = '8',  [0x8A] = '9',  [0x8B] = '0',
-    [0x8C] = '-',  [0x8D] = '=',  [0xA9] = '`',  [0x9A] = '[',  [0x9B] = ']',
-    [0xA7] = ';',  [0xA8] = '\'', [0xB3] = ',',  [0xB4] = '.',  [0xB5] = '/',
-    [0xAB] = '\\', [0x9E] = 'a',  [0xB0] = 'b',  [0xAE] = 'c',  [0xA0] = 'd',
-    [0x92] = 'e',  [0xA1] = 'f',  [0xA2] = 'g',  [0xA3] = 'h',  [0x97] = 'i',
-    [0xA4] = 'j',  [0xA5] = 'k',  [0xA6] = 'l',  [0xB2] = 'm',  [0xB1] = 'n',
-    [0x98] = 'o',  [0x99] = 'p',  [0x90] = 'q',  [0x93] = 'r',  [0x9F] = 's',
-    [0x94] = 't',  [0x96] = 'u',  [0xAF] = 'v',  [0x91] = 'w',  [0xAD] = 'x',
-    [0x95] = 'y',  [0xAC] = 'z'
+static const char kbd_make_normal[256] = {
+    [0x02] = '1',  [0x03] = '2',  [0x04] = '3',  [0x05] = '4',  [0x06] = '5',
+    [0x07] = '6',  [0x08] = '7',  [0x09] = '8',  [0x0A] = '9',  [0x0B] = '0',
+    [0x0C] = '-',  [0x0D] = '=',  [0x29] = '`',  [0x1A] = '[',  [0x1B] = ']',
+    [0x27] = ';',  [0x28] = '\'', [0x33] = ',',  [0x34] = '.',  [0x35] = '/',
+    [0x2B] = '\\', [0x1E] = 'a',  [0x30] = 'b',  [0x2E] = 'c',  [0x20] = 'd',
+    [0x12] = 'e',  [0x21] = 'f',  [0x22] = 'g',  [0x23] = 'h',  [0x17] = 'i',
+    [0x24] = 'j',  [0x25] = 'k',  [0x26] = 'l',  [0x32] = 'm',  [0x31] = 'n',
+    [0x18] = 'o',  [0x19] = 'p',  [0x10] = 'q',  [0x13] = 'r',  [0x1F] = 's',
+    [0x14] = 't',  [0x16] = 'u',  [0x2F] = 'v',  [0x11] = 'w',  [0x2D] = 'x',
+    [0x15] = 'y',  [0x2C] = 'z'
 };
 
-static const char kbd_break_shift[256] = {
-    [0x82] = '!',  [0x83] = '@',  [0x84] = '#',  [0x85] = '$',  [0x86] = '%',
-    [0x87] = '^',  [0x88] = '&',  [0x89] = '*',  [0x8A] = '(',  [0x8B] = ')',
-    [0x8C] = '_',  [0x8D] = '+',  [0xA9] = '~',  [0x9A] = '{',  [0x9B] = '}',
-    [0xA7] = ':',  [0xA8] = '\"', [0xB3] = '<',  [0xB4] = '>',  [0xB5] = '?',
-    [0xAB] = '|',  [0x9E] = 'A',  [0xB0] = 'B',  [0xAE] = 'C',  [0xA0] = 'D',
-    [0x92] = 'E',  [0xA1] = 'F',  [0xA2] = 'G',  [0xA3] = 'H',  [0x97] = 'I',
-    [0xA4] = 'J',  [0xA5] = 'K',  [0xA6] = 'L',  [0xB2] = 'M',  [0xB1] = 'N',
-    [0x98] = 'O',  [0x99] = 'P',  [0x90] = 'Q',  [0x93] = 'R',  [0x9F] = 'S',
-    [0x94] = 'T',  [0x96] = 'U',  [0xAF] = 'V',  [0x91] = 'W',  [0xAD] = 'X',
-    [0x95] = 'Y',  [0xAC] = 'Z'
+static const char kbd_make_shift[256] = {
+    [0x02] = '!',  [0x03] = '@',  [0x04] = '#',  [0x05] = '$',  [0x06] = '%',
+    [0x07] = '^',  [0x08] = '&',  [0x09] = '*',  [0x0A] = '(',  [0x0B] = ')',
+    [0x0C] = '_',  [0x0D] = '+',  [0x29] = '~',  [0x1A] = '{',  [0x1B] = '}',
+    [0x27] = ':',  [0x28] = '\"', [0x33] = '<',  [0x34] = '>',  [0x35] = '?',
+    [0x2B] = '|',  [0x1E] = 'A',  [0x30] = 'B',  [0x2E] = 'C',  [0x20] = 'D',
+    [0x12] = 'E',  [0x21] = 'F',  [0x22] = 'G',  [0x23] = 'H',  [0x17] = 'I',
+    [0x24] = 'J',  [0x25] = 'K',  [0x26] = 'L',  [0x32] = 'M',  [0x31] = 'N',
+    [0x18] = 'O',  [0x19] = 'P',  [0x10] = 'Q',  [0x13] = 'R',  [0x1F] = 'S',
+    [0x14] = 'T',  [0x16] = 'U',  [0x2F] = 'V',  [0x11] = 'W',  [0x2D] = 'X',
+    [0x15] = 'Y',  [0x2C] = 'Z'
 };
 
 void sys_reset(void) {
@@ -155,17 +155,35 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
         // --- РЕЖИМ РЕДАКТИРОВАНИЯ ФАЙЛА (edit) ---
         if (current_scancode == 0x1C) { // Enter
             if (*sh || rshift_down) {
-                // Shift + Enter (любой Shift): Сохранение файла и выход в терминал
-                ext4_create_file("/", active_edit_filename, 0x8180, edit_buffer, edit_buf_len);
+                char dir_path[300];
+                char file_name[256];
+                ext4_split_path(active_edit_filename, dir_path, file_name);
+
+                // СТРАХОВКА: если edit_buf_len по какой-то причине равен 0, считаем длину вручную
+                if (edit_buf_len == 0) {
+                    int len = 0;
+                    while (edit_buffer[len] != '\0' && len < 4095) {
+                        len++;
+                    }
+                    edit_buf_len = len;
+                }
+
+                int res = ext4_create_file(dir_path, file_name, 0x8180, edit_buffer, edit_buf_len);
+
                 in_edit_mode = 0;
                 fillScreen(0, 0, 0, 255);
                 *o = 1;
-                printf("File saved successfully.", 0, (*o) * LINE_HEIGHT, 0, 255, 0, 255);
+
+                if (res == 0) {
+                    printf("File saved successfully.", 0, (*o) * LINE_HEIGHT, 0, 255, 0, 255);
+                } else {
+                    printf("Error saving file, code:", 0, (*o) * LINE_HEIGHT, 255, 80, 80, 255);
+                }
                 (*o) += 2;
             } else {
-                // Обычный Enter — перевод строки внутри файла
                 if (edit_buf_len < 4095) {
                     edit_buffer[edit_buf_len++] = '\n';
+                    edit_buffer[edit_buf_len] = '\0';
                 }
             }
         } else if (current_scancode == 0x0E) { // Backspace
@@ -178,7 +196,7 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
             if (current_scancode == 0x39) {
                 ascii = ' ';
             } else {
-                ascii = *sh ? kbd_break_shift[current_scancode] : kbd_break_normal[current_scancode];
+                ascii = *sh ? kbd_make_shift[current_scancode] : kbd_make_normal[current_scancode];
             }
 
             if (ascii != 0 && edit_buf_len < 4095) {
@@ -214,15 +232,12 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
                 command[*i] = '\0';
             }
         } else if (current_scancode == 0x1C) { // Enter
-            // Стираем текущую строку ввода полностью перед выполнением команды,
-            // чтобы приглашение не оставалось на старом месте
             int start_y = (*o) * LINE_HEIGHT;
             for (int py = start_y - 15; py < start_y + 8; py++) {
                 for (int px = 0; px < 800; px++) {
                     drawPoint(px, py, 0, 0, 0, 255);
                 }
             }
-            // Дублируем введенную команду на экран в историю, чтобы она не пропадала
             printf(">", 0, start_y, 255, 255, 255, 255);
             for (int idx = 0; idx < *i; idx++) {
                 char str[2] = { command[idx], '\0' };
@@ -240,6 +255,35 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
                     in_edit_mode = 1;
                     edit_buf_len = 0;
                     for (int f = 0; f < 4096; f++) edit_buffer[f] = 0;
+
+                    // Формируем полный путь к файлу
+                    char full_path[300];
+                    if (active_edit_filename[0] != '/') {
+                        full_path[0] = '/';
+                        int idx = 0;
+                        while (active_edit_filename[idx] != '\0' && idx < 290) {
+                            full_path[idx + 1] = active_edit_filename[idx];
+                            idx++;
+                        }
+                        full_path[idx + 1] = '\0';
+                    } else {
+                        int idx = 0;
+                        while (active_edit_filename[idx] != '\0' && idx < 290) {
+                            full_path[idx] = active_edit_filename[idx];
+                            idx++;
+                        }
+                        full_path[idx] = '\0';
+                    }
+
+                    // Читаем содержимое файла в буфер редактора
+                    int bytes_read = ext4_read_file_to_buffer(full_path, edit_buffer, 4095);
+                    if (bytes_read > 0) {
+                        edit_buf_len = bytes_read;
+                        edit_buffer[edit_buf_len] = '\0';
+                    } else {
+                        edit_buf_len = 0;
+                        edit_buffer[0] = '\0';
+                    }
                 } else {
                     *o += result + 1;
                 }
@@ -258,7 +302,7 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
             if (current_scancode == 0x39) {
                 ascii = ' ';
             } else {
-                ascii = *sh ? kbd_break_shift[current_scancode] : kbd_break_normal[current_scancode];
+                ascii = *sh ? kbd_make_shift[current_scancode] : kbd_make_normal[current_scancode];
             }
 
             if (ascii != 0 && *i < 510) {
