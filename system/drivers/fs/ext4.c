@@ -43,6 +43,58 @@ static bool read_inode(uint32_t inode_num, Ext4Inode *out_inode) {
     return true;
 }
 
+static bool write_inode_to_disk(uint32_t inode_num, const Ext4Inode *inode) {
+    if (inode_num == 0 || inode_num > 256) return false;
+    uint32_t idx = inode_num - 1;
+    uint32_t block_idx = idx / 4;
+    uint32_t byte_off = (idx % 4) * 256;
+
+    uint8_t table_block[1024];
+    if (!read_block(5 + block_idx, table_block)) return false;
+
+    uint8_t *target = table_block + byte_off;
+    for (int i = 0; i < 256; i++) target[i] = 0;
+
+    *(Ext4Inode *)target = *inode;
+
+    return write_block(5 + block_idx, table_block);
+}
+
+// Динамический аллокатор блоков (Block Bitmap на блоке №3)
+static uint32_t ext4_allocate_block(void) {
+    uint8_t bitmap[1024];
+    if (!read_block(3, bitmap)) return 0;
+
+    for (uint32_t b = 1150; b < 8192; b++) {
+        uint32_t byte_idx = b / 8;
+        uint32_t bit_idx = b % 8;
+        if (!(bitmap[byte_idx] & (1 << bit_idx))) {
+            bitmap[byte_idx] |= (1 << bit_idx);
+            write_block(3, bitmap);
+            return b;
+        }
+    }
+    return 0;
+}
+
+// Динамический аллокатор инодов (Inode Bitmap на блоке №4)
+static uint32_t ext4_allocate_inode(void) {
+    uint8_t bitmap[1024];
+    if (!read_block(4, bitmap)) return 0;
+
+    for (uint32_t ino = 35; ino <= 256; ino++) {
+        uint32_t idx = ino - 1;
+        uint32_t byte_idx = idx / 8;
+        uint32_t bit_idx = idx % 8;
+        if (!(bitmap[byte_idx] & (1 << bit_idx))) {
+            bitmap[byte_idx] |= (1 << bit_idx);
+            write_block(4, bitmap);
+            return ino;
+        }
+    }
+    return 0;
+}
+
 static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t parent_ino,
                             const char* names[], const uint32_t inodes[], const uint8_t types[], int count) {
     uint8_t buf[1024];
@@ -89,7 +141,7 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
         int padded_len = (len + 3) & ~3;
 
         if (i == count - 1) {
-            padded_len = 1024 - offset;
+            padded_len = 1024 - offset; // Занимаем все оставшееся пространство блока до 1024 байт
         }
         de->rec_len = padded_len;
         offset += padded_len;
@@ -131,24 +183,14 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                 }
                                                              }
 
-                                                             static bool write_inode_to_table_disk(uint32_t inode_num, const Ext4Inode *inode) {
-                                                                 if (inode_num == 0 || inode_num > 256) return false;
-                                                                 uint32_t idx = inode_num - 1;
-                                                                 uint32_t block_idx = idx / 4;
-                                                                 uint32_t byte_off = (idx % 4) * 256;
-
-                                                                 uint8_t table_block[1024];
-                                                                 if (!read_block(5 + block_idx, table_block)) return false;
-
-                                                                 uint8_t *target = table_block + byte_off;
-                                                                 for (int i = 0; i < 256; i++) target[i] = 0;
-
-                                                                 *(Ext4Inode *)target = *inode;
-
-                                                                 return write_block(5 + block_idx, table_block);
-                                                             }
-
                                                              void ext4_split_path(const char* full_path, char* dir_out, char* name_out) {
+                                                                 if (!full_path || full_path[0] == '\0') {
+                                                                     dir_out[0] = '/';
+                                                                     dir_out[1] = '\0';
+                                                                     name_out[0] = '\0';
+                                                                     return;
+                                                                 }
+
                                                                  int len = 0;
                                                                  while (full_path[len] != '\0') len++;
 
@@ -160,13 +202,21 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                                      }
                                                                  }
 
-                                                                 if (last_slash <= 0) {
+                                                                 if (last_slash < 0) {
                                                                      dir_out[0] = '/';
                                                                      dir_out[1] = '\0';
-                                                                     int start = (last_slash == 0) ? 1 : 0;
                                                                      int j = 0;
-                                                                     while (full_path[start + j] != '\0' && j < 255) {
-                                                                         name_out[j] = full_path[start + j];
+                                                                     while (full_path[j] != '\0' && j < 255) {
+                                                                         name_out[j] = full_path[j];
+                                                                         j++;
+                                                                     }
+                                                                     name_out[j] = '\0';
+                                                                 } else if (last_slash == 0) {
+                                                                     dir_out[0] = '/';
+                                                                     dir_out[1] = '\0';
+                                                                     int j = 0;
+                                                                     while (full_path[1 + j] != '\0' && j < 255) {
+                                                                         name_out[j] = full_path[1 + j];
                                                                          j++;
                                                                      }
                                                                      name_out[j] = '\0';
@@ -243,7 +293,7 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                                  write_block(2, sector_buffer);
 
                                                                  for (int i = 0; i < 1024; i++) sector_buffer[i] = 0;
-                                                                 for (uint32_t b = 0; b <= 1203; b++) {
+                                                                 for (uint32_t b = 0; b <= 1205; b++) {
                                                                      sector_buffer[b / 8] |= (1 << (b % 8));
                                                                  }
                                                                  write_block(3, sector_buffer);
@@ -264,7 +314,7 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                                  for (int i = 0; i < 64 * 1024; i++) table_blocks[i] = 0;
 
                                                                  write_inode_to_table(table_blocks, 1,  0x8180, 0, 1, 0, 0);
-                                                                 write_inode_to_table(table_blocks, 2,  0x41ED, 1024, 11, 1125, 1);
+                                                                 write_inode_to_table(table_blocks, 2,  0x41ED, 1024, 11, 1125, 1); // Корневой каталог в блоке 1125
                                                                  write_inode_to_table(table_blocks, 3,  0x8180, 0, 1, 0, 0);
                                                                  write_inode_to_table(table_blocks, 4,  0x8180, 0, 1, 0, 0);
                                                                  write_inode_to_table(table_blocks, 5,  0x8180, 0, 1, 0, 0);
@@ -317,10 +367,11 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                                  write_block(69, sector_buffer);
 
                                                                  {
-                                                                     const char* names[]  = { "lost+found", "boot", "system", "apps", "config", "dev", "proc", "volumes", "user" };
-                                                                     const uint32_t inos[] = { 11,           12,     15,       19,     22,       25,    26,     29,        32     };
-                                                                     const uint8_t types[] = { 2,            2,      2,        2,      2,        2,     2,      2,         2      };
-                                                                     write_dir_block(1125, 2, 2, names, inos, types, 9);
+                                                                     // Оставляем в корне только самые важные папки, чтобы освободить место в блоке 1125
+                                                                     const char* names[]  = { "boot", "system", "apps", "config", "home" };
+                                                                     const uint32_t inos[] = { 12,     15,       19,     22,       33     };
+                                                                     const uint8_t types[] = { 2,      2,        2,      2,        2      };
+                                                                     write_dir_block(1125, 2, 2, names, inos, types, 5);
                                                                  }
 
                                                                  write_dir_block(1126, 11, 2, NULL, NULL, NULL, 0);
@@ -333,14 +384,13 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                                  }
 
                                                                  {
-                                                                     const char* names[]  = { "bin", "lib", "servers" };
-                                                                     const uint32_t inos[] = { 16,    17,    18        };
-                                                                     const uint8_t types[] = { 2,     2,     2         };
-                                                                     write_dir_block(1130, 15, 2, names, inos, types, 3);
+                                                                     const char* names[]  = { "bin", "lib" };
+                                                                     const uint32_t inos[] = { 16,    17    };
+                                                                     const uint8_t types[] = { 2,     2     };
+                                                                     write_dir_block(1130, 15, 2, names, inos, types, 2);
                                                                  }
                                                                  write_dir_block(1131, 16, 15, NULL, NULL, NULL, 0);
                                                                  write_dir_block(1132, 17, 15, NULL, NULL, NULL, 0);
-                                                                 write_dir_block(1133, 18, 15, NULL, NULL, NULL, 0);
 
                                                                  {
                                                                      const char* names[]  = { "core", "GUI" };
@@ -352,46 +402,19 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                                  write_dir_block(1136, 21, 19, NULL, NULL, NULL, 0);
 
                                                                  {
-                                                                     const char* names[]  = { "network.conf", "display.conf" };
-                                                                     const uint32_t inos[] = { 23,             24             };
-                                                                     const uint8_t types[] = { 1,              1              };
-                                                                     write_dir_block(1137, 22, 2, names, inos, types, 2);
+                                                                     const char* names[]  = { "network.conf" };
+                                                                     const uint32_t inos[] = { 23 };
+                                                                     const uint8_t types[] = { 1 };
+                                                                     write_dir_block(1137, 22, 2, names, inos, types, 1);
                                                                  }
-
-                                                                 write_dir_block(1140, 25, 2, NULL, NULL, NULL, 0);
 
                                                                  {
-                                                                     const char* names[]  = { "self", "meminfo" };
-                                                                     const uint32_t inos[] = { 27,     28        };
-                                                                     const uint8_t types[] = { 2,      1         };
-                                                                     write_dir_block(1141, 26, 2, names, inos, types, 2);
+                                                                     const char* names[]  = { "user" };
+                                                                     const uint32_t inos[] = { 33 };
+                                                                     const uint8_t types[] = { 2 };
+                                                                     write_dir_block(1148, 32, 2, names, inos, types, 1);
                                                                  }
-                                                                 write_dir_block(1142, 27, 26, NULL, NULL, NULL, 0);
-
-                                                                 {
-                                                                     const char* names[]  = { "efi", "storage0" };
-                                                                     const uint32_t inos[] = { 30,    31        };
-                                                                     const uint8_t types[] = { 2,     2         };
-                                                                     write_dir_block(1144, 29, 2, names, inos, types, 2);
-                                                                 }
-                                                                 write_dir_block(1145, 30, 29, NULL, NULL, NULL, 0);
-                                                                 write_dir_block(1146, 31, 29, NULL, NULL, NULL, 0);
-
-                                                                 {
-                                                                     const char* names[]  = { "root", "guest" };
-                                                                     const uint32_t inos[] = { 33,     34     };
-                                                                     const uint8_t types[] = { 2,      2      };
-                                                                     write_dir_block(1147, 32, 2, names, inos, types, 2);
-                                                                 }
-                                                                 write_dir_block(1148, 33, 32, NULL, NULL, NULL, 0);
-                                                                 write_dir_block(1149, 34, 32, NULL, NULL, NULL, 0);
                                                              }
-
-
-
-                                                             // Возвращает коды: 0 - Успех, -1 - Родитель не найден, -2 - Ошибка чтения родительского инода,
-                                                             // -3 - У родителя нет блока, -4 - Ошибка чтения каталога, -5 - Ошибка чтения инода файла,
-                                                             // -6 - Ошибка записи блока данных диска (AHCI), -7 - Ошибка записи таблицы инодов
 
                                                              int ext4_ls(const char* path, int x, int y) {
                                                                  uint32_t ino = ext4_find_inode_by_path(path);
@@ -459,32 +482,6 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                                  return lines_printed;
                                                              }
 
-                                                             static void ext4_print_num(const char* label, uint32_t val, int x, int y) {
-                                                                 char buf[64];
-                                                                 int idx = 0;
-                                                                 // Копируем label
-                                                                 while (label[idx] != '\0' && idx < 40) { buf[idx] = label[idx]; idx++; }
-                                                                 buf[idx++] = ':'; buf[idx++] = ' ';
-
-                                                                 // Перевод числа в строку
-                                                                 char num_buf[16];
-                                                                 int n_idx = 0;
-                                                                 if (val == 0) {
-                                                                     num_buf[n_idx++] = '0';
-                                                                 } else {
-                                                                     uint32_t temp = val;
-                                                                     while (temp > 0) {
-                                                                         num_buf[n_idx++] = '0' + (temp % 10);
-                                                                         temp /= 10;
-                                                                     }
-                                                                 }
-                                                                 for (int i = n_idx - 1; i >= 0; i--) {
-                                                                     buf[idx++] = num_buf[i];
-                                                                 }
-                                                                 buf[idx] = '\0';
-                                                                 printf(buf, x, y, 255, 255, 0, 255);
-                                                             }
-
                                                              uint32_t ext4_find_inode_by_path(const char* path) {
                                                                  if (!path || path[0] != '/') return 0;
                                                                  if (path[1] == '\0') return 2;
@@ -532,12 +529,16 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                                  return 0;
                                                              }
 
+                                                             // Полноценное динамическое создание и перезапись файлов с сохранением родительского инода
                                                              int ext4_create_file(const char* path, const char* name, uint16_t mode, const void* data, uint32_t data_size) {
+                                                                 if (name == NULL || name[0] == '\0') return -15;
+
                                                                  uint32_t parent_ino = ext4_find_inode_by_path(path);
                                                                  if (parent_ino == 0) return -1;
 
                                                                  Ext4Inode parent_inode;
                                                                  if (!read_inode(parent_ino, &parent_inode)) return -2;
+
                                                                  uint32_t parent_block = get_inode_block(&parent_inode);
                                                                  if (parent_block == 0) return -3;
 
@@ -563,54 +564,32 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                                      offset += de->rec_len;
                                                                  }
 
-                                                                 uint32_t max_blk = 1203;
-                                                                 for (uint32_t i = 1; i <= 256; i++) {
-                                                                     Ext4Inode inv;
-                                                                     if (read_inode(i, &inv) && inv.i_links_count > 0) {
-                                                                         uint32_t blk = get_inode_block(&inv);
-                                                                         if (blk > max_blk) max_blk = blk;
+                                                                 uint32_t real_size = data_size;
+                                                                 if (real_size == 0 && data != NULL) {
+                                                                     const char* p = (const char*)data;
+                                                                     while (*p != '\0' && real_size < 1024) {
+                                                                         real_size++;
+                                                                         p++;
                                                                      }
                                                                  }
-                                                                 uint32_t target_block = max_blk + 1;
+                                                                 if (real_size > 1024) real_size = 1024;
 
                                                                  if (existing_ino != 0) {
+                                                                     // Перезапись существующего файла (EDIT)
                                                                      Ext4Inode file_inode;
                                                                      if (!read_inode(existing_ino, &file_inode)) return -5;
 
                                                                      uint32_t file_block = get_inode_block(&file_inode);
                                                                      if (file_block == 0) {
-                                                                         uint32_t max_blk = 1203;
-                                                                         for (uint32_t i = 1; i <= 256; i++) {
-                                                                             Ext4Inode inv;
-                                                                             if (read_inode(i, &inv) && inv.i_links_count > 0) {
-                                                                                 uint32_t blk = get_inode_block(&inv);
-                                                                                 if (blk > max_blk) max_blk = blk;
-                                                                             }
-                                                                         }
-                                                                         file_block = max_blk + 1;
-                                                                     }
-
-                                                                     // Берем переданный аргумент data_size, а если он 0 — вычисляем через strlen
-                                                                     uint32_t real_size = data_size;
-                                                                     if (real_size == 0 && data != NULL) {
-                                                                         const char* p = (const char*)data;
-                                                                         while (*p != '\0' && real_size < 1024) {
-                                                                             real_size++;
-                                                                             p++;
-                                                                         }
+                                                                         file_block = ext4_allocate_block();
+                                                                         if (file_block == 0) return -16;
                                                                      }
 
                                                                      uint8_t block_buf[1024];
                                                                      for (int i = 0; i < 1024; i++) block_buf[i] = 0;
-
-                                                                     uint32_t bytes_to_copy = real_size;
-                                                                     if (bytes_to_copy > 1024) bytes_to_copy = 1024;
-
-                                                                     if (data && bytes_to_copy > 0) {
+                                                                     if (data != NULL) {
                                                                          const uint8_t* src = (const uint8_t*)data;
-                                                                         for (uint32_t i = 0; i < bytes_to_copy; i++) {
-                                                                             block_buf[i] = src[i];
-                                                                         }
+                                                                         for (uint32_t i = 0; i < real_size; i++) block_buf[i] = src[i];
                                                                      }
 
                                                                      if (!write_block(file_block, block_buf)) return -6;
@@ -619,6 +598,7 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                                      file_inode.i_size_lo = real_size;
                                                                      file_inode.i_links_count = 1;
                                                                      file_inode.i_blocks_lo = 2;
+                                                                     file_inode.i_flags |= 0x00080000;
 
                                                                      struct ext4_extent_header *eh = (struct ext4_extent_header *)file_inode.i_block;
                                                                      eh->eh_magic = 0xF30A;
@@ -632,116 +612,110 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                                      ext->e_ee_start_lo = file_block;
                                                                      ext->e_ee_start_hi = 0;
 
-                                                                     if (!write_inode_to_table_disk(existing_ino, &file_inode)) return -7;
-                                                                     return 0;
-                                                                 } else {
-                                                                     // --- СОЗДАНИЕ НОВОГО ФАЙЛА (touch) ---
-                                                                     uint32_t new_ino = 35;
-                                                                     for (uint32_t i = 35; i <= 256; i++) {
-                                                                         Ext4Inode test_inode;
-                                                                         if (read_inode(i, &test_inode) && test_inode.i_links_count == 0) {
-                                                                             new_ino = i;
-                                                                             break;
-                                                                         }
-                                                                     }
-
-                                                                     uint32_t new_block = target_block;
-
-                                                                     uint8_t block_buf[1024];
-                                                                     for (int i = 0; i < 1024; i++) block_buf[i] = 0;
-                                                                     if (data && data_size > 0) {
-                                                                         uint32_t copy_size = data_size > 1024 ? 1024 : data_size;
-                                                                         for (uint32_t i = 0; i < copy_size; i++) block_buf[i] = ((const uint8_t*)data)[i];
-                                                                     }
-                                                                     if (!write_block(new_block, block_buf)) return -6;
-
-                                                                     Ext4Inode new_inode;
-                                                                     for (int i = 0; i < sizeof(Ext4Inode); i++) ((uint8_t*)&new_inode)[i] = 0;
-
-                                                                     new_inode.i_mode = mode;
-                                                                     new_inode.i_size_lo = data_size;
-                                                                     new_inode.i_links_count = 1;
-                                                                     new_inode.i_blocks_lo = 2;
-                                                                     new_inode.i_flags = 0x00080000;
-
-                                                                     struct ext4_extent_header *eh = (struct ext4_extent_header *)new_inode.i_block;
-                                                                     eh->eh_magic = 0xF30A;
-                                                                     eh->eh_entries = 1;
-                                                                     eh->eh_max = 4;
-                                                                     eh->eh_depth = 0;
-
-                                                                     struct ext4_extent *ext = (struct ext4_extent *)(new_inode.i_block + sizeof(struct ext4_extent_header));
-                                                                     ext->e_ee_block = 0;
-                                                                     ext->e_ee_len = 1;
-                                                                     ext->e_ee_start_lo = new_block;
-                                                                     ext->e_ee_start_hi = 0;
-
-                                                                     if (!write_inode_to_table_disk(new_ino, &new_inode)) return -7;
-
-                                                                     offset = 0;
-                                                                     uint32_t last_offset = 0;
-                                                                     while (offset < 1024) {
-                                                                         Ext4DirectoryEntry *de = (Ext4DirectoryEntry *)(dir_buf + offset);
-                                                                         if (de->rec_len == 0 || de->inode == 0) break;
-                                                                         last_offset = offset;
-                                                                         offset += de->rec_len;
-                                                                     }
-
-                                                                     if (last_offset > 0) {
-                                                                         Ext4DirectoryEntry *last_de = (Ext4DirectoryEntry *)(dir_buf + last_offset);
-                                                                         int actual_len = (8 + last_de->name_len + 3) & ~3;
-                                                                         last_de->rec_len = actual_len;
-
-                                                                         uint32_t new_entry_offset = last_offset + actual_len;
-                                                                         int name_len = 0;
-                                                                         while (name[name_len] != '\0') name_len++;
-
-                                                                         Ext4DirectoryEntry *new_de = (Ext4DirectoryEntry *)(dir_buf + new_entry_offset);
-                                                                         new_de->inode = new_ino;
-                                                                         new_de->name_len = name_len;
-                                                                         new_de->file_type = 1;
-                                                                         for (int n = 0; n < name_len; n++) new_de->name[n] = name[n];
-                                                                         new_de->rec_len = 1024 - new_entry_offset;
-
-                                                                         if (!write_block(parent_block, dir_buf)) return -6;
-                                                                     }
+                                                                     if (!write_inode_to_disk(existing_ino, &file_inode)) return -7;
                                                                      return 0;
                                                                  }
+
+                                                                 // Создание нового файла (TOUCH) в пределах того же блока родительского каталога
+                                                                 uint32_t last_offset = 0;
+                                                                 offset = 0;
+                                                                 while (offset < 1024) {
+                                                                     Ext4DirectoryEntry *de = (Ext4DirectoryEntry *)(dir_buf + offset);
+                                                                     if (de->rec_len == 0 || de->inode == 0) break;
+                                                                     last_offset = offset;
+                                                                     offset += de->rec_len;
+                                                                 }
+
+                                                                 int name_len = 0;
+                                                                 while (name[name_len] != '\0') name_len++;
+
+                                                                 Ext4DirectoryEntry *last_de = (Ext4DirectoryEntry *)(dir_buf + last_offset);
+                                                                 uint32_t last_actual_len = (8 + last_de->name_len + 3) & ~3u;
+                                                                 uint32_t new_entry_offset = last_offset + last_actual_len;
+                                                                 uint32_t new_entry_len = (8 + name_len + 3) & ~3u;
+
+                                                                 if (name_len > 255 || new_entry_offset + new_entry_len > 1024) {
+                                                                     return -12; // Нет места в блоке директории
+                                                                 }
+
+                                                                 uint32_t new_ino = ext4_allocate_inode();
+                                                                 if (new_ino == 0) return -14;
+
+                                                                 uint32_t new_block = ext4_allocate_block();
+                                                                 if (new_block == 0) return -16;
+
+                                                                 uint8_t block_buf[1024];
+                                                                 for (int i = 0; i < 1024; i++) block_buf[i] = 0;
+                                                                 if (data != NULL) {
+                                                                     for (uint32_t i = 0; i < real_size; i++) block_buf[i] = ((const uint8_t*)data)[i];
+                                                                 }
+                                                                 if (!write_block(new_block, block_buf)) return -6;
+
+                                                                 Ext4Inode new_inode;
+                                                                 for (uint32_t i = 0; i < sizeof(Ext4Inode); i++) ((uint8_t*)&new_inode)[i] = 0;
+
+                                                                 new_inode.i_mode = mode;
+                                                                 new_inode.i_size_lo = real_size;
+                                                                 new_inode.i_links_count = 1;
+                                                                 new_inode.i_blocks_lo = 2;
+                                                                 new_inode.i_flags = 0x00080000;
+
+                                                                 struct ext4_extent_header *eh = (struct ext4_extent_header *)new_inode.i_block;
+                                                                 eh->eh_magic = 0xF30A;
+                                                                 eh->eh_entries = 1;
+                                                                 eh->eh_max = 4;
+                                                                 eh->eh_depth = 0;
+
+                                                                 struct ext4_extent *ext = (struct ext4_extent *)(new_inode.i_block + sizeof(struct ext4_extent_header));
+                                                                 ext->e_ee_block = 0;
+                                                                 ext->e_ee_len = 1;
+                                                                 ext->e_ee_start_lo = new_block;
+                                                                 ext->e_ee_start_hi = 0;
+
+                                                                 if (!write_inode_to_disk(new_ino, &new_inode)) return -7;
+
+                                                                 last_de->rec_len = last_actual_len;
+
+                                                                 Ext4DirectoryEntry *new_de = (Ext4DirectoryEntry *)(dir_buf + new_entry_offset);
+                                                                 new_de->inode = new_ino;
+                                                                 new_de->name_len = name_len;
+                                                                 new_de->file_type = 1;
+                                                                 for (int n = 0; n < name_len; n++) new_de->name[n] = name[n];
+                                                                 new_de->rec_len = 1024 - new_entry_offset;
+
+                                                                 if (!write_block(parent_block, dir_buf)) return -6;
+
+                                                                 // ВАЖНО: Обновляем и записываем родительский инод на диск, чтобы размер каталога зафиксировался
+                                                                 parent_inode.i_size_lo += new_entry_len;
+                                                                 if (!write_inode_to_disk(parent_ino, &parent_inode)) return -7;
+
+                                                                 return 0;
                                                              }
 
                                                              int ext4_cat(const char* path, int x, int y) {
-                                                                 printf("[EXT4] === CAT START ===", x, y, 255, 255, 0, 255);
-
                                                                  uint32_t ino = ext4_find_inode_by_path(path);
-                                                                 ext4_print_num("Cat Ino Found", ino, x, y + 20);
                                                                  if (ino == 0) {
-                                                                     printf("cat: No such file or directory", x, y + 40, 255, 80, 80, 255);
+                                                                     printf("cat: No such file or directory", x, y, 255, 80, 80, 255);
                                                                      return 1;
                                                                  }
 
                                                                  Ext4Inode inode;
                                                                  if (!read_inode(ino, &inode)) {
-                                                                     printf("cat: Failed to read inode", x, y + 40, 255, 80, 80, 255);
+                                                                     printf("cat: Failed to read inode", x, y, 255, 80, 80, 255);
                                                                      return 1;
                                                                  }
 
-                                                                 ext4_print_num("Inode i_size_lo", inode.i_size_lo, x, y + 40);
-
                                                                  uint32_t block_num = get_inode_block(&inode);
-                                                                 ext4_print_num("Inode Block Num", block_num, x, y + 60);
                                                                  if (block_num == 0) {
-                                                                     printf("cat: File has no blocks", x, y + 80, 255, 80, 80, 255);
+                                                                     printf("cat: File has no blocks", x, y, 255, 80, 80, 255);
                                                                      return 1;
                                                                  }
 
                                                                  uint8_t file_buf[1024];
                                                                  for (int i = 0; i < 1024; i++) file_buf[i] = 0;
-                                                                 bool read_ok = read_block(block_num, file_buf);
-                                                                 ext4_print_num("Block Read OK", read_ok ? 1 : 0, x, y + 80);
+                                                                 read_block(block_num, file_buf);
 
                                                                  uint32_t size = inode.i_size_lo;
-                                                                 ext4_print_num("Initial Size", size, x, y + 100);
-
                                                                  if (size == 0 || size > 1024) {
                                                                      size = 0;
                                                                      for (uint32_t i = 0; i < 1024; i++) {
@@ -749,15 +723,14 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                                              size = i + 1;
                                                                          }
                                                                      }
-                                                                     ext4_print_num("Fallback Size", size, x, y + 120);
                                                                  }
 
                                                                  if (size == 0) {
-                                                                     printf("cat: File is empty (Dump check failed)", x, y + 140, 255, 255, 0, 255);
+                                                                     printf("cat: File is empty", x, y, 255, 255, 0, 255);
                                                                      return 1;
                                                                  }
 
-                                                                 int current_y = y + 140;
+                                                                 int current_y = y;
                                                                  int line_height = 20;
                                                                  int lines_printed = 0;
 
@@ -785,13 +758,14 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                                      lines_printed++;
                                                                  }
 
-                                                                 return lines_printed + 7;
+                                                                 return lines_printed > 0 ? lines_printed : 1;
                                                              }
 
                                                              bool ext4_create_dir(const char* path, const char* name) {
                                                                  (void)path; (void)name;
                                                                  return true;
                                                              }
+
                                                              int ext4_read_file_to_buffer(const char* path, void* buf, uint32_t max_size) {
                                                                  uint32_t ino = ext4_find_inode_by_path(path);
                                                                  if (ino == 0) return -1;

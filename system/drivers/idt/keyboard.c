@@ -18,10 +18,6 @@ volatile int kbd_tail = 0;
 void keyboard_handler_c() {
     uint8_t scancode = inb(0x60);
 
-    if (scancode == 0x01) {
-        sys_reset_direct();
-    }
-
     // Кладем скан-код в кольцевой буфер
     int next_head = (kbd_head + 1) % KBD_BUFFER_SIZE;
     if (next_head != kbd_tail) { // Если буфер не переполнен, сохраняем

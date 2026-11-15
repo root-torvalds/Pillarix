@@ -139,6 +139,7 @@ int edit_buf_len = 0;
 extern char active_edit_filename[];
 
 static void handle_keyboard_scancode(uint8_t current_scancode, char* command, int* i, int* cursor_pos, int* o, int* sh) {
+    last_scancode = current_scancode;
     if (current_scancode == 0x2A) {
         *sh = 1; // Left Shift press
     } else if (current_scancode == 0xAA) {
@@ -170,9 +171,26 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
 
                 int res = ext4_create_file(dir_path, file_name, 0x8180, edit_buffer, edit_buf_len);
 
+                // --- чтение обратно сразу после сохранения ---
+                char vpath[300];
+                vpath[0] = '/';
+                int vi = 0;
+                while (file_name[vi] != '\0' && vi < 290) { vpath[vi + 1] = file_name[vi]; vi++; }
+                vpath[vi + 1] = '\0';
+                char vbuf[64];
+                for (int k = 0; k < 64; k++) vbuf[k] = 0;
+                int vr = ext4_read_file_to_buffer(vpath, vbuf, 63);
+
                 in_edit_mode = 0;
                 fillScreen(0, 0, 0, 255);
                 *o = 1;
+
+                // --- отладочный вывод ---
+                printf("len:", 400, 20, 255, 255, 0, 255);  print_hex(edit_buf_len, 450, 20);
+                printf("res:", 600, 20, 255, 255, 0, 255);  print_hex((uint32_t)res, 650, 20);
+                printf("back:", 400, 40, 255, 255, 0, 255); print_hex((uint32_t)vr, 470, 40);
+                printf("name:", 600, 40, 255, 255, 0, 255);
+                printf(file_name, 660, 40, 255, 255, 255, 255);
 
                 if (res == 0) {
                     printf("File saved successfully.", 0, (*o) * LINE_HEIGHT, 0, 255, 0, 255);
@@ -414,6 +432,8 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
     static uint32_t last_sent_mouse_y = 9999;
 
     fillScreen(0, 0, 0, 255);
+    printf("len:", 0, 100, 255, 255, 0, 255);  print_hex(edit_buf_len, 60, 100);
+    printf("res:", 0, 120, 255, 255, 0, 255);  print_hex((uint32_t)res, 60, 120);
     swapBuffers(0);
 
     char command[512] = {0};
@@ -466,7 +486,10 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
                 // Рендеринг содержимого файла в режиме редактора
                 fillScreen(0, 0, 0, 255);
                 printf("--- EDITING FILE (Press RShift+Enter to save & exit) ---", 0, 20, 200, 200, 0, 255);
-
+                printf("file:", 600, 60, 255, 255, 0, 255);
+                printf(active_edit_filename, 660, 60, 255, 255, 255, 255);
+                printf("len:", 600, 20, 255, 255, 0, 255);  print_hex(edit_buf_len, 660, 20);
+                printf("sc:",  600, 40, 255, 255, 0, 255);  print_hex(last_scancode, 660, 40);
                 int cur_x = 0;
                 int cur_y = 50;
                 for (int idx = 0; idx < edit_buf_len; idx++) {
