@@ -132,6 +132,32 @@ static void redraw_input_line(int line_num, const char* cmd_str, int cmd_len, in
     }
 }
 
+#define EDIT_MAX 1024   /* файл = 1 блок ext4 (1024 байта), больше сохранить нельзя */
+static char edit_target[300];   /* абсолютный путь редактируемого файла (своя копия, не зависит от compiler.c) */
+
+static void make_abs_path(const char* in, char* out, int max) {
+    int j = 0;
+    if (in[0] != '/') out[j++] = '/';
+    for (int k = 0; in[k] != '\0' && j < max - 1; k++) out[j++] = in[k];
+    out[j] = '\0';
+}
+
+static const char* edit_err_text(int c) {
+    if (c == -1)  return "parent dir not found";
+    if (c == -2)  return "parent inode read failed";
+    if (c == -3)  return "parent dir has no block";
+    if (c == -4)  return "dir block read failed";
+    if (c == -5)  return "file inode read failed";
+    if (c == -6)  return "AHCI disk write failed";
+    if (c == -7)  return "inode table write failed";
+    if (c == -12) return "no space in directory block";
+    if (c == -14) return "no free inode";
+    if (c == -15) return "empty file name";
+    if (c == -16) return "no free block";
+    if (c == -17) return "file larger than 1024 bytes";
+    return "unknown error";
+}
+
 static int rshift_down = 0;
 int in_edit_mode = 0;
 char edit_buffer[4096] = {0};
@@ -158,48 +184,40 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
             if (*sh || rshift_down) {
                 char dir_path[300];
                 char file_name[256];
-                ext4_split_path(active_edit_filename, dir_path, file_name);
+                ext4_split_path(edit_target, dir_path, file_name);
 
-                // СТРАХОВКА: если edit_buf_len по какой-то причине равен 0, считаем длину вручную
-                if (edit_buf_len == 0) {
-                    int len = 0;
-                    while (edit_buffer[len] != '\0' && len < 4095) {
-                        len++;
-                    }
-                    edit_buf_len = len;
-                }
+                int res;
+                if (file_name[0] == '\0') res = -15;
+                else res = ext4_create_file(dir_path, file_name, 0x8180, edit_buffer, edit_buf_len);
 
-                int res = ext4_create_file(dir_path, file_name, 0x8180, edit_buffer, edit_buf_len);
-
-                // --- чтение обратно сразу после сохранения ---
-                char vpath[300];
-                vpath[0] = '/';
-                int vi = 0;
-                while (file_name[vi] != '\0' && vi < 290) { vpath[vi + 1] = file_name[vi]; vi++; }
-                vpath[vi + 1] = '\0';
+                // читаем обратно, чтобы убедиться, что данные реально на диске
                 char vbuf[64];
                 for (int k = 0; k < 64; k++) vbuf[k] = 0;
-                int vr = ext4_read_file_to_buffer(vpath, vbuf, 63);
+                int vr = (res == 0) ? ext4_read_file_to_buffer(edit_target, vbuf, 63) : res;
+                int expect = (edit_buf_len < 63) ? edit_buf_len : 63;
 
                 in_edit_mode = 0;
                 fillScreen(0, 0, 0, 255);
                 *o = 1;
+                int y0 = (*o) * LINE_HEIGHT;
 
-                // --- отладочный вывод ---
-                printf("len:", 400, 20, 255, 255, 0, 255);  print_hex(edit_buf_len, 450, 20);
-                printf("res:", 600, 20, 255, 255, 0, 255);  print_hex((uint32_t)res, 650, 20);
-                printf("back:", 400, 40, 255, 255, 0, 255); print_hex((uint32_t)vr, 470, 40);
-                printf("name:", 600, 40, 255, 255, 0, 255);
-                printf(file_name, 660, 40, 255, 255, 255, 255);
-
-                if (res == 0) {
-                    printf("File saved successfully.", 0, (*o) * LINE_HEIGHT, 0, 255, 0, 255);
+                if (res == 0 && vr == expect) {
+                    printf("File saved successfully.", 0, y0, 0, 255, 0, 255);
+                } else if (res == 0) {
+                    printf("Saved, but read-back mismatch! got:", 0, y0, 255, 80, 80, 255);
+                    print_hex((uint32_t)vr, 400, y0);
+                    printf("expected:", 0, y0 + LINE_HEIGHT, 255, 255, 0, 255);
+                    print_hex((uint32_t)expect, 100, y0 + LINE_HEIGHT);
                 } else {
-                    printf("Error saving file, code:", 0, (*o) * LINE_HEIGHT, 255, 80, 80, 255);
+                    printf("Error saving file, code:", 0, y0, 255, 80, 80, 255);
+                    print_hex((uint32_t)res, 260, y0);
+                    printf(edit_err_text(res), 0, y0 + LINE_HEIGHT, 255, 255, 0, 255);
                 }
-                (*o) += 2;
+                printf("path:", 0, y0 + 2 * LINE_HEIGHT, 150, 150, 150, 255);
+                printf(edit_target, 60, y0 + 2 * LINE_HEIGHT, 255, 255, 255, 255);
+                (*o) += 4;
             } else {
-                if (edit_buf_len < 4095) {
+                if (edit_buf_len < EDIT_MAX) {
                     edit_buffer[edit_buf_len++] = '\n';
                     edit_buffer[edit_buf_len] = '\0';
                 }
@@ -217,7 +235,7 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
                 ascii = *sh ? kbd_make_shift[current_scancode] : kbd_make_normal[current_scancode];
             }
 
-            if (ascii != 0 && edit_buf_len < 4095) {
+            if (ascii != 0 && edit_buf_len < EDIT_MAX) {
                 edit_buffer[edit_buf_len++] = ascii;
                 edit_buffer[edit_buf_len] = '\0';
             }
@@ -270,37 +288,20 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
                     fillScreen(0, 0, 0, 255);
                     *o = 1;
                 } else if (result == -2) { // Запуск режима редактора (команда edit)
-                    in_edit_mode = 1;
-                    edit_buf_len = 0;
-                    for (int f = 0; f < 4096; f++) edit_buffer[f] = 0;
-
-                    // Формируем полный путь к файлу
-                    char full_path[300];
-                    if (active_edit_filename[0] != '/') {
-                        full_path[0] = '/';
-                        int idx = 0;
-                        while (active_edit_filename[idx] != '\0' && idx < 290) {
-                            full_path[idx + 1] = active_edit_filename[idx];
-                            idx++;
-                        }
-                        full_path[idx + 1] = '\0';
+                    if (active_edit_filename[0] == '\0') {
+                        printf("edit: empty file name", 0, ((*o) + 1) * LINE_HEIGHT, 255, 80, 80, 255);
+                        *o += 2;
                     } else {
-                        int idx = 0;
-                        while (active_edit_filename[idx] != '\0' && idx < 290) {
-                            full_path[idx] = active_edit_filename[idx];
-                            idx++;
-                        }
-                        full_path[idx] = '\0';
-                    }
-
-                    // Читаем содержимое файла в буфер редактора
-                    int bytes_read = ext4_read_file_to_buffer(full_path, edit_buffer, 4095);
-                    if (bytes_read > 0) {
-                        edit_buf_len = bytes_read;
-                        edit_buffer[edit_buf_len] = '\0';
-                    } else {
+                        make_abs_path(active_edit_filename, edit_target, sizeof(edit_target));
+                        in_edit_mode = 1;
                         edit_buf_len = 0;
-                        edit_buffer[0] = '\0';
+                        for (int f = 0; f < 4096; f++) edit_buffer[f] = 0;
+
+                        int bytes_read = ext4_read_file_to_buffer(edit_target, edit_buffer, EDIT_MAX);
+                        if (bytes_read > 0) {
+                            edit_buf_len = bytes_read;
+                            edit_buffer[edit_buf_len] = '\0';
+                        }
                     }
                 } else {
                     *o += result + 1;
@@ -487,7 +488,7 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
                 fillScreen(0, 0, 0, 255);
                 printf("--- EDITING FILE (Press RShift+Enter to save & exit) ---", 0, 20, 200, 200, 0, 255);
                 printf("file:", 600, 60, 255, 255, 0, 255);
-                printf(active_edit_filename, 660, 60, 255, 255, 255, 255);
+                printf(edit_target, 660, 60, 255, 255, 255, 255);
                 printf("len:", 600, 20, 255, 255, 0, 255);  print_hex(edit_buf_len, 660, 20);
                 printf("sc:",  600, 40, 255, 255, 0, 255);  print_hex(last_scancode, 660, 40);
                 int cur_x = 0;

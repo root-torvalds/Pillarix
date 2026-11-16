@@ -52,6 +52,117 @@ int tokenize_command(char* cmd, char* argv[], int max_args) {
     return argc;
 }
 
+
+// ---------------- math: калькулятор ----------------
+typedef struct {
+    const char* p;
+    int err;      // 0 = ок, 1 = синтаксис, 2 = деление на ноль
+} MathParser;
+
+static void math_skip(MathParser* m) {
+    while (*m->p == ' ' || *m->p == '\t') m->p++;
+}
+
+static double math_expr(MathParser* m);
+
+static double math_primary(MathParser* m) {
+    math_skip(m);
+    if (*m->p == '(') {
+        m->p++;
+        double v = math_expr(m);
+        math_skip(m);
+        if (*m->p != ')') { if (!m->err) m->err = 1; return 0; }
+        m->p++;
+        return v;
+    }
+    if ((*m->p >= '0' && *m->p <= '9') || *m->p == '.') {
+        double v = 0;
+        int digits = 0;
+        while (*m->p >= '0' && *m->p <= '9') {
+            v = v * 10.0 + (*m->p - '0');
+            m->p++; digits++;
+        }
+        if (*m->p == '.') {
+            m->p++;
+            double scale = 0.1;
+            while (*m->p >= '0' && *m->p <= '9') {
+                v += (*m->p - '0') * scale;
+                scale /= 10.0;
+                m->p++; digits++;
+            }
+        }
+        if (digits == 0) { if (!m->err) m->err = 1; return 0; }
+        return v;
+    }
+    if (!m->err) m->err = 1;
+    return 0;
+}
+
+static double math_unary(MathParser* m) {
+    math_skip(m);
+    if (*m->p == '-') { m->p++; return -math_unary(m); }
+    if (*m->p == '+') { m->p++; return math_unary(m); }
+    return math_primary(m);
+}
+
+static double math_term(MathParser* m) {
+    double v = math_unary(m);
+    for (;;) {
+        math_skip(m);
+        if (*m->p == '*') {
+            m->p++;
+            v *= math_unary(m);
+        } else if (*m->p == '/') {
+            m->p++;
+            double d = math_unary(m);
+            if (d == 0.0) { if (!m->err) m->err = 2; return 0; }
+            v /= d;
+        } else break;
+    }
+    return v;
+}
+
+static double math_expr(MathParser* m) {
+    double v = math_term(m);
+    for (;;) {
+        math_skip(m);
+        if (*m->p == '+') { m->p++; v += math_term(m); }
+        else if (*m->p == '-') { m->p++; v -= math_term(m); }
+        else break;
+    }
+    return v;
+}
+
+// double -> строка (до 8 знаков после точки, хвостовые нули убираются). Без libc.
+static int math_format(double v, char* out) {
+    int n = 0;
+    if (v != v) { const char* s = "nan"; while (*s) out[n++] = *s++; out[n] = 0; return n; }
+    if (v < 0) { out[n++] = '-'; v = -v; }
+    if (v >= 1e18) { const char* s = "overflow"; while (*s) out[n++] = *s++; out[n] = 0; return n; }
+
+    uint64_t ip = (uint64_t)v;
+    double frac = v - (double)ip;
+    uint64_t f = (uint64_t)(frac * 100000000.0 + 0.5);
+    if (f >= 100000000ULL) { ip++; f -= 100000000ULL; }
+
+    char tmp[24];
+    int t = 0;
+    if (ip == 0) tmp[t++] = '0';
+    while (ip > 0) { tmp[t++] = '0' + (int)(ip % 10); ip /= 10; }
+    while (t > 0) out[n++] = tmp[--t];
+
+    if (f > 0) {
+        char fd[8];
+        for (int i = 7; i >= 0; i--) { fd[i] = '0' + (int)(f % 10); f /= 10; }
+        int last = 7;
+        while (last >= 0 && fd[last] == '0') last--;
+        out[n++] = '.';
+        for (int i = 0; i <= last; i++) out[n++] = fd[i];
+    }
+    out[n] = 0;
+    return n;
+}
+
 int terminal_execute_command(char* cmd, int x, int y, int o) {
     int line_height = 20;
     int out_y = (o + 1) * line_height;
@@ -97,7 +208,8 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         printf("  touch   - Create an empty file", out_x, out_y + line_height * 6, 150, 150, 150, 255);
         printf("  edit    - Edit file (RShift+Enter to save)", out_x, out_y + line_height * 7, 150, 150, 150, 255);
         printf("  install - Format disk and install OS", out_x, out_y + line_height * 8, 150, 150, 150, 255);
-        return 9;
+        printf("  math    - Calculator: math 2*(3+4)", out_x, out_y + line_height * 9, 150, 150, 150, 255);
+        return 10;
     } else if (term_strcmp(argv[0], "ver") == 0) {
         printf("Pillarix OS v4-alpha", out_x, out_y, 0, 255, 100, 255);
         return 1;
@@ -159,7 +271,7 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
             return 1;
         }
     } else if (term_strcmp(argv[0], "edit") == 0) {
-        if (argc > 1) {
+        if (argc > 1 && argv[1][0] != '\0') {
             int dest_idx = 0;
             int src_idx = 0;
             while (argv[1][src_idx] != '\0' && dest_idx < 255) {
@@ -171,6 +283,37 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
             printf("Usage: edit <filename>", out_x, out_y, 255, 80, 80, 255);
             return 1;
         }
+    } else if (term_strcmp(argv[0], "math") == 0) {
+        if (argc < 2) {
+            printf("Usage: math <expression>  e.g. math 2*(3+4)", out_x, out_y, 255, 80, 80, 255);
+            return 1;
+        }
+        // склеиваем все аргументы, чтобы работало и "math 2 * 3"
+        char expr[256];
+        int ei = 0;
+        for (int a = 1; a < argc; a++) {
+            for (int k = 0; argv[a][k] != '\0' && ei < 250; k++) expr[ei++] = argv[a][k];
+            if (ei < 250) expr[ei++] = ' ';
+        }
+        expr[ei] = '\0';
+
+        MathParser mp;
+        mp.p = expr;
+        mp.err = 0;
+        double result = math_expr(&mp);
+        math_skip(&mp);
+        if (!mp.err && *mp.p != '\0') mp.err = 1; // остался мусор в конце
+
+        if (mp.err == 2) {
+            printf("math: division by zero", out_x, out_y, 255, 80, 80, 255);
+        } else if (mp.err) {
+            printf("math: syntax error", out_x, out_y, 255, 80, 80, 255);
+        } else {
+            char res_buf[48];
+            math_format(result, res_buf);
+            printf(res_buf, out_x, out_y, 0, 255, 100, 255);
+        }
+        return 1;
     } else if (term_strcmp(argv[0], "install") == 0) {
         mkfs_ext4();
         printf("OS installed successfully! Filesystem formatted.", out_x, out_y, 0, 255, 0, 255);

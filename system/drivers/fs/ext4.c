@@ -532,6 +532,7 @@ static void write_dir_block(uint32_t block_num, uint32_t self_ino, uint32_t pare
                                                              // Полноценное динамическое создание и перезапись файлов с сохранением родительского инода
                                                              int ext4_create_file(const char* path, const char* name, uint16_t mode, const void* data, uint32_t data_size) {
                                                                  if (name == NULL || name[0] == '\0') return -15;
+                                                                 if (data_size > 1024) return -17; // не обрезаем данные молча
 
                                                                  uint32_t parent_ino = ext4_find_inode_by_path(path);
                                                                  if (parent_ino == 0) return -1;
