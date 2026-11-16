@@ -2,7 +2,7 @@ CC = x86_64-w64-mingw32-gcc
 CXX = x86_64-w64-mingw32-g++
 ASM = nasm
 
-CFLAGS = -ffreestanding -nostdlib -mno-red-zone -fno-builtin -Wall -O2 \
+CFLAGS = -ffreestanding -nostdlib -mno-red-zone -fno-builtin -fno-strict-aliasing -Wall -O2 \
          -I. \
          -Isystem
 
@@ -25,7 +25,15 @@ C_SRCS = boot/bootloader.c \
          system/kernel/idt/ahci.c \
          system/graphic/print.c \
          system/kernel/alloc/allocate.c \
-         system/drivers/fs/ext4.c \
+         system/drivers/fs/ext4_io.c \
+         system/drivers/fs/ext4_balloc.c \
+         system/drivers/fs/ext4_ialloc.c \
+         system/drivers/fs/ext4_inode.c \
+         system/drivers/fs/ext4_dir.c \
+         system/drivers/fs/ext4_namei.c \
+         system/drivers/fs/ext4_file.c \
+         system/drivers/fs/ext4_journal.c \
+         system/drivers/fs/ext4_mkfs.c \
          system/drivers/virtio/virtio_pci.c \
          system/drivers/virtio/virtio_gpu.c \
          system/drivers/virtio/virtio_gpu_proto.c \
