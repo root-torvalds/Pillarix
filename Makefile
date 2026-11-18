@@ -42,6 +42,9 @@ C_SRCS = boot/bootloader.c \
          system/drivers/idt/hda.c \
          system/graphic/display_manager.c \
          system/msh/compile/compiler.c \
+         system/kernel/syscalls/gdt.c \
+         system/kernel/syscalls/syscall.c \
+         system/kernel/syscalls/exec.c \
          system/graphic/qt.c
 
 CXX_SRCS = system/drivers/virtio/virtio_gpu_cmd.cpp
@@ -53,7 +56,7 @@ CXX_OBJS = $(addprefix build/, $(notdir $(CXX_SRCS:.cpp=_cpp.o)))
 
 OBJS = $(C_OBJS) $(CXX_OBJS) $(ASM_OBJS)
 
-vpath %.c boot system system/kernel/kernel system/graphic system/kernel/idt system/drivers/idt system/kernel/alloc system/drivers/fs system/drivers/virtio system/msh/compile
+vpath %.c boot system system/kernel/kernel system/graphic system/kernel/idt system/drivers/idt system/kernel/alloc system/drivers/fs system/drivers/virtio system/msh/compile system/kernel/syscalls
 vpath %.cpp system/drivers/idt system/drivers/virtio
 vpath %.asm system/kernel/idt
 
@@ -104,8 +107,10 @@ run:
 		-audiodev pipewire,id=snd0 \
 		-device intel-hda \
 		-device hda-output,audiodev=snd0 \
-		-d int \
-		-D qemu.log
+		-d int,cpu_reset \
+		-D qemu.log \
+		-no-reboot \
+		-no-shutdown
 
 clean:
 	rm -f BOOTX64.EFI pillarix.iso

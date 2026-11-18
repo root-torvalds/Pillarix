@@ -77,6 +77,7 @@ void sys_shutdown(void) {
 }
 
 void init_kernel() {
+    init_gdt();   /* свой GDT + TSS (нужны для ring 3), до init_idt() */
     init_idt();
     printf("[KERNEL] Initializing IDT...", 50, 150, 255, 255, 0, 255);
     swapBuffers(0);
@@ -86,7 +87,7 @@ void init_kernel() {
     init_local_apic();
     printf("[KERNEL] Initializing LAPIC...", 50, 250, 255, 255, 0, 255);
     swapBuffers(0);
-    init_lapic_timer(1000);
+    init_lapic_timer(10000000);
     printf("[KERNEL] Initializing LAPIC timer...", 50, 300, 255, 255, 0, 255);
     swapBuffers(0);
     init_ioapic();
@@ -156,6 +157,30 @@ static const char* edit_err_text(int c) {
     if (c == -16) return "no free block";
     if (c == -17) return "file larger than 1024 bytes";
     return "unknown error";
+}
+
+int kbd_wait_char(void) {
+    extern volatile uint8_t kbd_ring_buffer[];
+    extern volatile int kbd_head;
+    extern volatile int kbd_tail;
+    static int shift = 0;
+
+    for (;;) {
+        while (kbd_head == kbd_tail) {
+            __asm__ volatile("hlt");
+        }
+        uint8_t sc = kbd_ring_buffer[kbd_tail];
+        kbd_tail = (kbd_tail + 1) % KBD_BUFFER_SIZE;
+
+        if (sc == 0x2A || sc == 0x36) { shift = 1; continue; }
+        if (sc == 0xAA || sc == 0xB6) { shift = 0; continue; }
+        if (sc == 0x1C) return '\n';
+        if (sc == 0x0E) return '\b';
+        if (sc == 0x39) return ' ';
+
+        char c = shift ? kbd_make_shift[sc] : kbd_make_normal[sc];
+        if (c != 0) return (int)(unsigned char)c;
+    }
 }
 
 static int rshift_down = 0;
@@ -425,10 +450,7 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
     for (volatile int i = 0; i < 10000000; i++) {
         __asm__ volatile("nop");
     }
-
-
     __asm__ volatile("sti");
-
     static uint32_t last_sent_mouse_x = 9999;
     static uint32_t last_sent_mouse_y = 9999;
 
@@ -447,7 +469,7 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
     int cursor_visible = 1;
 
     redraw_input_line(o, command, i, cursor_pos, cursor_visible);
-
+    swapBuffers(0);
     extern volatile uint8_t kbd_ring_buffer[];
     extern volatile int kbd_head;
     extern volatile int kbd_tail;
@@ -464,7 +486,7 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
         // --- Мигание курсора (только в обычном режиме терминала) ---
         if (!in_edit_mode) {
             cursor_ticks++;
-            if (cursor_ticks % 10 == 0) {
+            if (cursor_ticks % 4 == 0) {
                 cursor_visible = !cursor_visible;
                 need_redraw = 1;
             }
@@ -509,7 +531,7 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
                 }
             } else {
                 redraw_input_line(o, command, i, cursor_pos, cursor_visible);
-            }
-        } swapBuffers(0);
+            } swapBuffers(0);
+        }
     }
 }

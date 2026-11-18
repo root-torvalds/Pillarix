@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DISPLAY_WIDTH                          1024
-#define DISPLAY_HEIGHT                         768
+#define DISPLAY_WIDTH                          1920
+#define DISPLAY_HEIGHT                         1080
 #define GPU_RESOURCE_ID                        1
 
 #define VIRTIO_PCI_VENDOR_ID                   0x1AF4

@@ -17,6 +17,8 @@ extern volatile uint8_t last_scancode;
 #include "../idt/idt.h"
 #include "lib.h"
 #include "../alloc/allocate.h"
+#include "../syscalls/gdt.h"
+#include "../syscalls/syscall.h"
 
 // Подключения из system/drivers/
 #include "../../../system/drivers/idt/hda.h"       // или относительный путь ниже
