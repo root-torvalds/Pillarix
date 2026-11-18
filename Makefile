@@ -112,6 +112,13 @@ run:
 		-no-reboot \
 		-no-shutdown
 
+app:
+	nasm -f elf64 user/crt0.asm -o build/crt0.o
+	gcc -ffreestanding -nostdlib -mno-red-zone -fPIC -Os -fno-asynchronous-unwind-tables -c user/calc.c -o build/calc.o
+	ld -T user/user.ld -o build/calc.elf build/crt0.o build/calc.o
+	objcopy -O binary build/calc.elf calc.plx
+	python3 utils/put_plx.py disk.img calc.plx calc
+
 clean:
 	rm -f BOOTX64.EFI pillarix.iso
 	rm -rf iso_root

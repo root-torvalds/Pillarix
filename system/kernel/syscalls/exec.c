@@ -47,24 +47,26 @@ static uint64_t* split_large(uint64_t e, int lvl) {
     return t;
 }
 
-/* Делает страницы [addr, addr+len) доступными из ring 3 (и исполняемыми, если exec) */
 static int vm_map_user(void* addr, uint64_t len, int exec) {
-    uint64_t cr3;
+    uint64_t cr0, cr3;
+    __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
+    __asm__ volatile("mov %0, %%cr0" : : "r"(cr0 & ~(1ULL << 16)) : "memory");
     __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
 
     uint64_t a   = (uint64_t)addr & ~0xFFFULL;
     uint64_t end = (uint64_t)addr + len;
+    int err = 0;
 
     for (; a < end; a += 4096) {
         uint64_t* t = (uint64_t*)(cr3 & PTE_ADDR);
         for (int lvl = 3; lvl >= 0; lvl--) {
             uint64_t idx = (a >> (12 + 9 * lvl)) & 0x1FF;
             uint64_t e = t[idx];
-            if (!(e & PTE_P)) return -1;
+            if (!(e & PTE_P)) { err = -1; goto out; }
 
             if (lvl >= 1 && lvl <= 2 && (e & PTE_PS)) {
                 uint64_t* nt = split_large(e, lvl);
-                if (!nt) return -1;
+                if (!nt) { err = -1; goto out; }
                 e = (uint64_t)nt | PTE_P | PTE_RW | PTE_US;
             } else {
                 e |= PTE_RW | PTE_US;
@@ -77,7 +79,10 @@ static int vm_map_user(void* addr, uint64_t len, int exec) {
         }
     }
     __asm__ volatile("mov %%cr3, %%rax\n\tmov %%rax, %%cr3" ::: "rax", "memory");
-    return 0;
+
+    out:
+    __asm__ volatile("mov %0, %%cr0" : : "r"(cr0) : "memory");
+    return err;
 }
 
 static int px_err(const char* msg, int x, int y) {
