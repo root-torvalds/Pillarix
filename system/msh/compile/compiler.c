@@ -6,6 +6,7 @@
 extern void sys_reset(void);
 
 char active_edit_filename[256] = {0};
+char current_dir[256] = "/";
 
 int term_strcmp(const char* s1, const char* s2) {
     int i = 0;
@@ -52,6 +53,71 @@ int tokenize_command(char* cmd, char* argv[], int max_args) {
     return argc;
 }
 
+/* Преобразует относительный или абсолютный путь в нормализованный абсолютный путь
+ * с учётом current_dir, "." и ".." */
+void term_resolve_path(const char* input, char* out, int max_len) {
+    char raw[512];
+    int r = 0;
+
+    if (!input || input[0] == '\0') {
+        int i = 0;
+        while (current_dir[i] != '\0' && i < max_len - 1) {
+            out[i] = current_dir[i];
+            i++;
+        }
+        out[i] = '\0';
+        return;
+    }
+
+    if (input[0] == '/') {
+        for (int i = 0; input[i] != '\0' && r < 510; i++) raw[r++] = input[i];
+    } else {
+        for (int i = 0; current_dir[i] != '\0' && r < 510; i++) raw[r++] = current_dir[i];
+        if (r > 0 && raw[r - 1] != '/' && r < 510) raw[r++] = '/';
+        for (int i = 0; input[i] != '\0' && r < 510; i++) raw[r++] = input[i];
+    }
+    raw[r] = '\0';
+
+    const char* parts[32];
+    int depth = 0;
+    int idx = 0;
+
+    while (raw[idx] != '\0') {
+        while (raw[idx] == '/') {
+            raw[idx] = '\0';
+            idx++;
+        }
+        if (raw[idx] == '\0') break;
+
+        const char* seg = &raw[idx];
+        while (raw[idx] != '\0' && raw[idx] != '/') {
+            idx++;
+        }
+
+        if (term_strcmp(seg, ".") == 0) {
+            continue;
+        } else if (term_strcmp(seg, "..") == 0) {
+            if (depth > 0) depth--;
+        } else if (depth < 32) {
+            parts[depth++] = seg;
+        }
+    }
+
+    if (depth == 0) {
+        out[0] = '/';
+        out[1] = '\0';
+        return;
+    }
+
+    int o = 0;
+    for (int d = 0; d < depth; d++) {
+        if (o < max_len - 1) out[o++] = '/';
+        for (int k = 0; parts[d][k] != '\0' && o < max_len - 1; k++) {
+            out[o++] = parts[d][k];
+        }
+    }
+    out[o] = '\0';
+}
 
 // ---------------- math: калькулятор ----------------
 typedef struct {
@@ -204,41 +270,50 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         printf("  clear   - Clear terminal screen", out_x, out_y + line_height * 2, 150, 150, 150, 255);
         printf("  reboot  - Restart the system", out_x, out_y + line_height * 3, 150, 150, 150, 255);
         printf("  ls      - List directory contents", out_x, out_y + line_height * 4, 150, 150, 150, 255);
-        printf("  cat     - Display file contents", out_x, out_y + line_height * 5, 150, 150, 150, 255);
-        printf("  touch   - Create an empty file", out_x, out_y + line_height * 6, 150, 150, 150, 255);
-        printf("  edit    - Edit file (RShift+Enter to save)", out_x, out_y + line_height * 7, 150, 150, 150, 255);
-        printf("  install - Format disk and install OS", out_x, out_y + line_height * 8, 150, 150, 150, 255);
-        printf("  math    - Calculator: math 2*(3+4)", out_x, out_y + line_height * 9, 150, 150, 150, 255);
-        printf("  ./name  - Run program from disk: ./hello", out_x, out_y + line_height * 10, 150, 150, 150, 255);
-        return 12;
+        printf("  cd      - Change current directory", out_x, out_y + line_height * 5, 150, 150, 150, 255);
+        printf("  pwd     - Print working directory", out_x, out_y + line_height * 6, 150, 150, 150, 255);
+        printf("  cat     - Display file contents", out_x, out_y + line_height * 7, 150, 150, 150, 255);
+        printf("  touch   - Create an empty file", out_x, out_y + line_height * 8, 150, 150, 150, 255);
+        printf("  edit    - Edit file (RShift+Enter to save)", out_x, out_y + line_height * 9, 150, 150, 150, 255);
+        printf("  install - Format disk and install OS", out_x, out_y + line_height * 10, 150, 150, 150, 255);
+        printf("  math    - Calculator: math 2*(3+4)", out_x, out_y + line_height * 11, 150, 150, 150, 255);
+        printf("  ./name  - Run program from disk: ./hello", out_x, out_y + line_height * 12, 150, 150, 150, 255);
+        return 14;
     } else if (term_strcmp(argv[0], "ver") == 0) {
         printf("Pillarix OS v4-alpha", out_x, out_y, 0, 255, 100, 255);
         return 1;
     } else if (term_strcmp(argv[0], "reboot") == 0) {
         sys_reset();
         return 1;
+    } else if (term_strcmp(argv[0], "pwd") == 0) {
+        printf(current_dir, out_x, out_y, 255, 255, 255, 255);
+        return 1;
+    } else if (term_strcmp(argv[0], "cd") == 0) {
+        const char* target = (argc > 1) ? argv[1] : "/";
+        char resolved[300];
+        term_resolve_path(target, resolved, sizeof(resolved));
+
+        if (!ext4_is_dir(resolved)) {
+            printf("cd: No such directory", out_x, out_y, 255, 80, 80, 255);
+            return 1;
+        }
+
+        int k = 0;
+        while (resolved[k] != '\0' && k < 255) {
+            current_dir[k] = resolved[k];
+            k++;
+        }
+        current_dir[k] = '\0';
+        return 0;
+
     } else if (term_strcmp(argv[0], "ls") == 0) {
-        const char* path = (argc > 1) ? argv[1] : "/";
-        return ext4_ls(path, out_x, out_y);
+        char resolved[300];
+        term_resolve_path((argc > 1) ? argv[1] : "", resolved, sizeof(resolved));
+        return ext4_ls(resolved, out_x, out_y);
     } else if (term_strcmp(argv[0], "cat") == 0) {
         if (argc > 1) {
             char full_path[300];
-            if (argv[1][0] != '/') {
-                full_path[0] = '/';
-                int idx = 0;
-                while (argv[1][idx] != '\0' && idx < 290) {
-                    full_path[idx + 1] = argv[1][idx];
-                    idx++;
-                }
-                full_path[idx + 1] = '\0';
-            } else {
-                int idx = 0;
-                while (argv[1][idx] != '\0' && idx < 290) {
-                    full_path[idx] = argv[1][idx];
-                    idx++;
-                }
-                full_path[idx] = '\0';
-            }
+            term_resolve_path(argv[1], full_path, sizeof(full_path));
             return ext4_cat(full_path, out_x, out_y);
         } else {
             printf("Usage: cat <filename>", out_x, out_y, 255, 80, 80, 255);
@@ -246,17 +321,16 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         }
     } else if (term_strcmp(argv[0], "touch") == 0) {
         if (argc > 1) {
+            char full_path[300];
             char dir_path[300];
             char file_name[256];
-            ext4_split_path(argv[1], dir_path, file_name);
+            term_resolve_path(argv[1], full_path, sizeof(full_path));
+            ext4_split_path(full_path, dir_path, file_name);
 
             int res = ext4_create_file(dir_path, file_name, 0x8180, "", 0);
             if (res == 0) {
                 printf("File created successfully", out_x, out_y, 0, 255, 0, 255);
             } else {
-                // Выводим точный код ошибки для диагностики
-                char err_buf[64];
-                // Простая конвертация кода ошибки в строку или вывод текста
                 if (res == -1) printf("touch: err -1 (Parent dir not found)", out_x, out_y, 255, 80, 80, 255);
                 else if (res == -2) printf("touch: err -2 (Parent inode read fail)", out_x, out_y, 255, 80, 80, 255);
                 else if (res == -3) printf("touch: err -3 (Parent block is 0)", out_x, out_y, 255, 80, 80, 255);
@@ -273,12 +347,7 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         }
     } else if (term_strcmp(argv[0], "edit") == 0) {
         if (argc > 1 && argv[1][0] != '\0') {
-            int dest_idx = 0;
-            int src_idx = 0;
-            while (argv[1][src_idx] != '\0' && dest_idx < 255) {
-                active_edit_filename[dest_idx++] = argv[1][src_idx++];
-            }
-            active_edit_filename[dest_idx] = '\0';
+            term_resolve_path(argv[1], active_edit_filename, 256);
             return -2; // Запуск графического редактора
         } else {
             printf("Usage: edit <filename>", out_x, out_y, 255, 80, 80, 255);
@@ -319,13 +388,13 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         return px_run(argv[0] + 2, out_x, out_y);
     } else if (term_strcmp(argv[0], "install") == 0) {
         mkfs_ext4();
+        current_dir[0] = '/';
+        current_dir[1] = '\0';
         printf("OS installed successfully! Filesystem formatted.", out_x, out_y, 0, 255, 0, 255);
         return 1;
     } else if (term_strcmp(argv[0], "clear") == 0) {
         return -1;
-    }
-
-    else {
+    } else {
         char err_msg[128];
         const char* prefix = "Unknown command: ";
         int idx = 0;

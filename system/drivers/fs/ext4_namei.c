@@ -73,3 +73,13 @@ uint32_t ext4_find_inode_by_path(const char* path) {
 
     return ext4_dir_lookup(dir_buf, name);
 }
+
+bool ext4_is_dir(const char* path) {
+    uint32_t ino = ext4_find_inode_by_path(path);
+    if (ino == 0) return false;
+
+    Ext4Inode inode;
+    if (!ext4_read_inode(ino, &inode)) return false;
+
+    return (inode.i_mode & EXT4_S_IFMT) == EXT4_S_IFDIR;
+}

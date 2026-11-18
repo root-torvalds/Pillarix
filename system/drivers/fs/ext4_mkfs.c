@@ -201,10 +201,12 @@ static void write_directories(void) {
     }
     {
         const char* const names[] = { "user" };
-        const uint32_t    inos[]  = { 33 };
+        const uint32_t    inos[]  = { 34 };
         const uint8_t     types[] = { 2 };
-        ext4_dir_format(1148, 32, 2, names, inos, types, 1);
+        ext4_dir_format(1148, 33, 2, names, inos, types, 1);
     }
+    ext4_dir_format(1149, 34, 33, NULL, NULL, NULL, 0);
+
 }
 
 void mkfs_ext4(void) {

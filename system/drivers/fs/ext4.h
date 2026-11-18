@@ -119,3 +119,4 @@ int ext4_ls(const char* path, int x, int y);
 int ext4_cat(const char* path, int x, int y);
 void ext4_split_path(const char* full_path, char* dir_out, char* name_out);
 int ext4_read_file_to_buffer(const char* path, void* buf, uint32_t max_size);
+bool ext4_is_dir(const char* path);

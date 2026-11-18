@@ -159,30 +159,6 @@ static void history_add(const char* cmd) {
     history_index = history_count;
 }
 
-static void redraw_input_line(int line_num, const char* cmd_str, int cmd_len, int cur_pos, int show_cursor) {
-    int start_y = line_num * LINE_HEIGHT;
-
-    for (int py = start_y - 15; py < start_y + 8; py++) {
-        for (int px = 0; px < 800; px++) {
-            drawPoint(px, py, 0, 0, 0, 255);
-        }
-    }
-
-    printf(">", 0, start_y, 255, 255, 255, 255);
-
-    // 3. Рисуем  текст символ за символом
-    for (int idx = 0; idx < cmd_len; idx++) {
-        char str[2] = { cmd_str[idx], '\0' };
-        printf(str, 15 + (idx * 10), start_y, 255, 255, 255, 255);
-    }
-
-    // 4. Рисуем мигающий курсор
-    if (show_cursor) {
-        int cur_x = 15 + (cur_pos * 10);
-        printf("_", cur_x, start_y, 0, 255, 255, 255);
-    }
-}
-
 #define EDIT_MAX 1024
 static char edit_target[300];
 
@@ -230,6 +206,36 @@ int kbd_wait_char(void) {
 
         char c = shift ? kbd_make_shift[sc] : kbd_make_normal[sc];
         if (c != 0) return (int)(unsigned char)c;
+    }
+}
+
+extern char current_dir[];
+
+/* В функции redraw_input_line замените вывод ">" на вывод текущего пути: */
+static void redraw_input_line(int line_num, const char* cmd_str, int cmd_len, int cur_pos, int show_cursor) {
+    int start_y = line_num * LINE_HEIGHT;
+
+    for (int py = start_y - 15; py < start_y + 8; py++) {
+        for (int px = 0; px < 800; px++) {
+            drawPoint(px, py, 0, 0, 0, 255);
+        }
+    }
+    int char_w = 10;
+    int dir_len = history_str_len(current_dir);
+    printf(current_dir, 0, start_y, 100, 200, 255, 255);
+    printf(">", dir_len * char_w, start_y, 255, 255, 255, 255);
+
+    int text_offset = (dir_len * char_w) + 12;
+
+
+    for (int idx = 0; idx < cmd_len; idx++) {
+        char str[2] = { cmd_str[idx], '\0' };
+        printf(str, text_offset + (idx * 10), start_y, 255, 255, 255, 255);
+    }
+
+    if (show_cursor) {
+        int cur_x = text_offset + (cur_pos * 10);
+        printf("_", cur_x, start_y, 0, 255, 255, 255);
     }
 }
 
@@ -364,17 +370,7 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
                 command[*i] = '\0';
             }
         } else if (current_scancode == 0x1C) { // Enter
-            int start_y = (*o) * LINE_HEIGHT;
-            for (int py = start_y - 15; py < start_y + 8; py++) {
-                for (int px = 0; px < 800; px++) {
-                    drawPoint(px, py, 0, 0, 0, 255);
-                }
-            }
-            printf(">", 0, start_y, 255, 255, 255, 255);
-            for (int idx = 0; idx < *i; idx++) {
-                char str[2] = { command[idx], '\0' };
-                printf(str, 15 + (idx * 10), start_y, 255, 255, 255, 255);
-            }
+            redraw_input_line(*o, command, *i, *cursor_pos, 0);
 
             if (*i > 0) {
                 command[*i] = '\0';
