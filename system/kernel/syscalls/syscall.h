@@ -15,7 +15,10 @@
 #define SYS_DRAW_LINE  5   /* rdi = PxGfxArgs* (x1, y1, x2, y2, r, g, b, a) */
 #define SYS_SWAP       6   /* swapBuffers(0)                                */
 #define SYS_GET_MOUSE  7   /* get_mouse(PxMouse* out, int wait_click)       */
-#define SYS_DRAW_TEXT  8   /* rdi = PxTextArgs*                             */
+#define SYS_DRAW_TEXT     8   /* rdi = PxTextArgs*                             */
+#define SYS_DRAW_ELLIPSE  9   /* rdi = PxGfxArgs* (x, y, w, h, r, g, b, a)     */
+#define SYS_MEASURE_TEXT  10  /* rdi = const char* -> width in px              */
+
 
 #define SYSCALL_VECTOR 0x80
 

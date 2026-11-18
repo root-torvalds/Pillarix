@@ -1,7 +1,8 @@
 SECTIONS {
     . = 0;
     .text   : { *(.plx_hdr) *(.text*) }
-    .rodata : { *(.rodata*) }
-    .data   : { *(.data*) }
-    .bss    : { *(.bss*) }
+    .rodata : ALIGN(16) { *(.rodata*) }
+    .data   : ALIGN(16) { *(.data*) }
+    .bss    : ALIGN(16) { *(.bss*) }
+    /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) *(.got*) *(.plt*) }
 }

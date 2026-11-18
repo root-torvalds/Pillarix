@@ -24,10 +24,11 @@ typedef struct __attribute__((packed)) {
 
 static inline int64_t syscall3(uint64_t n, uint64_t a1, uint64_t a2, uint64_t a3) {
     int64_t ret;
+    uint64_t d1, d2, d3;
     __asm__ volatile("int $0x80"
-    : "=a"(ret)
-    : "a"(n), "D"(a1), "S"(a2), "d"(a3)
-    : "rcx", "r11", "memory");
+    : "=a"(ret), "=D"(d1), "=S"(d2), "=d"(d3)
+    : "a"(n), "1"(a1), "2"(a2), "3"(a3)
+    : "rcx", "r8", "r9", "r10", "r11", "memory");
     return ret;
 }
 
@@ -82,6 +83,15 @@ static inline void drawText(const char* text, uint32_t x, uint32_t y,
     syscall3(8, (uint64_t)&args, 0, 0);
 }
 
+static inline void drawEllipse(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                            uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    PxGfxArgs args = { x, y, w, h, r, g, b, a };
+    syscall3(9, (uint64_t)&args, 0, 0);
+}
+
+static inline uint32_t measureText(const char* text) {
+    return (uint32_t)syscall3(10, (uint64_t)text, 0, 0);
+}
 
 static inline void swapBuffers(void) {
     syscall3(6, 0, 0, 0);

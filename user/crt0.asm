@@ -5,7 +5,7 @@ extern main
 section .plx_hdr
     db 'P', 'L', 'X', '0'
     dd _start - $$
-    dd 8192
+    dd 16384
     dd 0
 
 section .text

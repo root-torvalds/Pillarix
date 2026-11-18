@@ -58,3 +58,13 @@ void printf(const void *buffer, unsigned int start_x, unsigned int start_y,
         current_x += glyph.advance_x;
     }
 }
+
+uint32_t measure_text(const char* str) {
+    if (!str) return 0;
+    uint32_t width = 0;
+    for (int i = 0; str[i] != '\0'; i++) {
+        GlyphMetrics glyph = get_glyph_metrics(str[i]);
+        width += glyph.advance_x;
+    }
+    return width;
+}

@@ -66,43 +66,50 @@ EFIAPI void drawPoint(uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t b, u
     virtual_framebuffer[index].Blue  = ((b * a) + (bg_b * (255 - a))) >> 8;
 }
 
-// Основная функция отрисовки линии (Алгоритм Брезенхема)
-void drawLine(uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-    // Ранний возврат, если линия полностью прозрачна
-    if (a == 0) return;
+static inline int iabs(int x) { return x < 0 ? -x : x; }
 
-    // Вычисляем абсолютные разницы координат
-    int dx = (x2 >= x1) ? (x2 - x1) : (x1 - x2);
-    int dy = (y2 >= y1) ? (y2 - y1) : (y1 - y2);
+void drawLine(int x0, int y0, int x1, int y1,
+                uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    int steep = iabs(y1 - y0) > iabs(x1 - x0);
+    if (steep) {
+        int t = x0; x0 = y0; y0 = t;
+        t = x1; x1 = y1; y1 = t;
+    }
+    if (x0 > x1) {
+        int t = x0; x0 = x1; x1 = t;
+        t = y0; y0 = y1; y1 = t;
+    }
 
-    // Определяем направление движения по осям (1 или -1)
-    int sx = (x1 < x2) ? 1 : -1;
-    int sy = (y1 < y2) ? 1 : -1;
+    int dx = x1 - x0;
+    int dy = y1 - y0;
 
-    int err = dx - dy;
+    if (dx == 0) {
+        drawPoint(steep ? y0 : x0, steep ? x0 : y0, r, g, b, a);
+        return;
+    }
 
-    while (true) {
-        // Рисуем текущую точку
-        drawPoint(x1, y1, r, g, b, a);
+    /* Фиксированная точка 16.16 */
+    int32_t gradient = (dy << 16) / dx;
+    int32_t intery = (y0 << 16);
 
-        // Если дошли до конечной точки — выходим из цикла
-        if (x1 == x2 && y1 == y2) break;
+    for (int x = x0; x <= x1; x++) {
+        int y = intery >> 16;
+        uint8_t frac = (intery >> 8) & 0xFF; /* дробная часть 0..255 */
 
-        int e2 = 2 * err;
+        uint8_t a1 = ((uint32_t)(255 - frac) * a) / 255;
+        uint8_t a2 = ((uint32_t)frac * a) / 255;
 
-        // Корректируем ошибку и координату X
-        if (e2 > -dy) {
-            err -= dy;
-            x1 += sx;
+        if (steep) {
+            if (a1 > 0) drawPoint(y, x, r, g, b, a1);
+            if (a2 > 0) drawPoint(y + 1, x, r, g, b, a2);
+        } else {
+            if (a1 > 0) drawPoint(x, y, r, g, b, a1);
+            if (a2 > 0) drawPoint(x, y + 1, r, g, b, a2);
         }
-
-        // Корректируем ошибку и координату Y
-        if (e2 < dx) {
-            err += dx;
-            y1 += sy;
-        }
+        intery += gradient;
     }
 }
+
 EFIAPI void drawRect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
 
     if (!virtual_framebuffer || x >= 1920 || y >= 1080 || w == 0 || h == 0 || a == 0) return;
@@ -131,4 +138,51 @@ EFIAPI void drawRect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint8_t r, 
 }
 EFIAPI void fillScreen(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
     drawRect(0, 0, 1920, 1080, r, g, b, a);
+}
+
+static uint32_t isqrt64(uint64_t n) {
+    uint64_t x = n, y = (x + 1) >> 1;
+    while (y < x) {
+        x = y;
+        y = (x + n / x) >> 1;
+    }
+    return (uint32_t)x;
+}
+
+void drawEllipse(int x, int y, int width, int height,
+                 uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    if (width <= 0 || height <= 0) return;
+
+    /* Работаем в удвоенных координатах, чтобы избежать половинок для четных размеров */
+    int64_t rx = width;   /* 2 * полуось A */
+    int64_t ry = height;  /* 2 * полуось B */
+    int64_t cx = 2 * x + width - 1;
+    int64_t cy = 2 * y + height - 1;
+
+    int64_t rx2 = rx * rx;
+    int64_t ry2 = ry * ry;
+    int64_t target = rx2 * ry2;
+    /* Градиент на границе эллипса для толщины ~1px */
+    int64_t norm = 2 * isqrt64((uint64_t)(rx2 * ry2 * (rx2 + ry2)));
+    if (norm == 0) norm = 1;
+
+    for (int py = y - 1; py <= y + height; py++) {
+        int64_t dy = 2 * py - cy;
+        int64_t dy2_rx2 = dy * dy * rx2;
+        for (int px = x - 1; px <= x + width; px++) {
+            int64_t dx = 2 * px - cx;
+            int64_t val = dx * dx * ry2 + dy2_rx2;
+            int64_t diff = val - target;
+            if (diff < 0) diff = -diff;
+
+            /* Расстояние в субпикселях (0..256) от идеальной кривой */
+            int64_t dist = (diff * 256) / norm;
+            if (dist < 256) {
+                uint8_t alpha = (uint8_t)(((256 - dist) * a) / 256);
+                if (alpha > 0) {
+                    drawPoint(px, py, r, g, b, alpha);
+                }
+            }
+        }
+    }
 }

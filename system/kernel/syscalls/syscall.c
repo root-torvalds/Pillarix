@@ -76,6 +76,13 @@ typedef struct __attribute__((packed)) {
 } PxGfxArgs;
 
 int64_t syscall_dispatch(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3) {
+    /* В начале syscall_dispatch: */
+    uint64_t cr4;
+    __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
+    if (cr4 & (1ULL << 21)) {
+        __asm__ volatile("mov %0, %%cr4" :: "r"(cr4 & ~(1ULL << 21)));
+    }
+
     (void)a3;
     switch (num) {
         case SYS_WRITE:  return sys_write((const char*)a1, a2);
@@ -85,12 +92,6 @@ int64_t syscall_dispatch(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3) {
             if (!user_ptr_ok(a1, sizeof(PxGfxArgs))) return -1;
             const PxGfxArgs* p = (const PxGfxArgs*)a1;
             drawRect(p->a, p->b, p->c, p->d, p->r, p->g, p->bl, p->al);
-            return 0;
-        }
-        case SYS_DRAW_LINE: {
-            if (!user_ptr_ok(a1, sizeof(PxGfxArgs))) return -1;
-            const PxGfxArgs* p = (const PxGfxArgs*)a1;
-            drawLine(p->a, p->b, p->c, p->d, p->r, p->g, p->bl, p->al);
             return 0;
         }
         case SYS_SWAP:
@@ -118,17 +119,45 @@ int64_t syscall_dispatch(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3) {
             const PxTextArgs* p = (const PxTextArgs*)a1;
             if (!p->text) return -1;
 
-            /* Проверяем, что строка лежит в памяти пользователя и содержит '\0' */
+            char buf[256];
             const char* s = (const char*)p->text;
             uint64_t len = 0;
-            while (user_ptr_ok(p->text + len, 1)) {
-                if (s[len] == '\0') break;
+            while (len < sizeof(buf) - 1 && user_ptr_ok(p->text + len, 1)) {
+                buf[len] = s[len];
+                if (buf[len] == '\0') break;
                 len++;
             }
-            if (!user_ptr_ok(p->text + len, 1) || s[len] != '\0') return -1;
+            buf[len] = '\0';
 
-            printf(s, p->x, p->y, p->r, p->g, p->b, p->a);
+            printf(buf, p->x, p->y, p->r, p->g, p->b, p->a);
             return 0;
+        }
+        case SYS_DRAW_LINE: {
+            if (!user_ptr_ok(a1, sizeof(PxGfxArgs))) return -1;
+            const PxGfxArgs* p = (const PxGfxArgs*)a1;
+            drawLine((int)p->a, (int)p->b, (int)p->c, (int)p->d,
+                       p->r, p->g, p->bl, p->al);
+            return 0;
+        }
+        case SYS_DRAW_ELLIPSE: {
+            if (!user_ptr_ok(a1, sizeof(PxGfxArgs))) return -1;
+            const PxGfxArgs* p = (const PxGfxArgs*)a1;
+            drawEllipse((int)p->a, (int)p->b, (int)p->c, (int)p->d,
+                        p->r, p->g, p->bl, p->al);
+            return 0;
+        }
+        case SYS_MEASURE_TEXT: {
+            if (!a1) return 0;
+            char buf[256];
+            const char* s = (const char*)a1;
+            uint64_t len = 0;
+            while (len < sizeof(buf) - 1 && user_ptr_ok(a1 + len, 1)) {
+                buf[len] = s[len];
+                if (buf[len] == '\0') break;
+                len++;
+            }
+            buf[len] = '\0';
+            return (int64_t)measure_text(buf);
         }
         default:
             return -1;

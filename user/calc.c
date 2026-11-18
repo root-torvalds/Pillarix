@@ -1,35 +1,36 @@
 #include "px.h"
 
 int main(void) {
-    PxMouse m;
-    int was_hovered = -1;
+    PxMouse m = {0, 0, 0};
+    int was_hov = -1;
 
-    uint32_t btn_x = 100, btn_y = 900;
-    uint32_t btn_w = 1720, btn_h = 75;
+    char title[] = {'P','i','l','l','a','r','i','x',' ','T','e','s','t',0};
+    char btn[]   = {'E','x','i','t',0};
 
     for (;;) {
-        int is_hovered = (m.x >= btn_x && m.x <= btn_x + btn_w &&
-        m.y >= btn_y && m.y <= btn_y + btn_h);
+        int hov = (m.x >= 760 && m.x <= 1160 && m.y >= 940 && m.y <= 1010);
 
-        /* На первой итерации (was_hovered == -1) m еще не прочитан,
-         * поэтому принудительно рисуем начальный кадр целиком. */
-        if (was_hovered == -1 || is_hovered != was_hovered) {
-            fillScreen(25, 25, 35, 255);
-            if (was_hovered != -1 && is_hovered) {
-                drawRect(btn_x, btn_y, btn_w, btn_h, 50, 190, 255, 255);
-            } else {
-                drawRect(btn_x, btn_y, btn_w, btn_h, 0, 140, 255, 255);
-            }
-            drawText("Exit", btn_x + 820, btn_y + 45, 255, 255, 255, 255);
+        if (was_hov == -1 || hov != was_hov) {
+            fillScreen(20, 22, 30, 255);
+
+            /* 1. Текст по центру */
+            drawText(title, (1920 - measureText(title)) / 2, 80, 255, 255, 255, 255);
+
+            /* 2. Сглаженная линия */
+            drawLine(300, 300, 700, 700, 80, 220, 255, 255);
+
+            /* 3. Круг */
+            drawEllipse(1100, 350, 300, 300, 255, 120, 180, 255);
+
+            /* 4. Кнопка с центрированным текстом */
+            drawRect(760, 940, 400, 70, hov ? 50 : 0, hov ? 190 : 140, 255, 255);
+            drawText(btn, 760 + (400 - measureText(btn)) / 2, 983, 255, 255, 255, 255);
+
             swapBuffers();
-            was_hovered = (was_hovered == -1) ? 0 : is_hovered;
+            was_hov = (was_hov == -1) ? 0 : hov;
         }
 
-        if (is_hovered && (m.buttons & MOUSE_LEFT)) {
-            break;
-        }
-
-        /* Ждем следующего прерывания (движения мыши или тика таймера) */
+        if (hov && (m.buttons & MOUSE_LEFT)) break;
         wait_mouse(&m);
     }
 
