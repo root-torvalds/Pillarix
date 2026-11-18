@@ -7,8 +7,14 @@
  *   rax = номер, rdi = arg1, rsi = arg2, rdx = arg3, результат в rax.
  *   Остальные регистры сохраняются.
  */
-#define SYS_EXIT   0   /* exit(code)            — завершить программу        */
-#define SYS_WRITE  1   /* write(ptr, len)       — вывести текст в терминал   */
+#define SYS_EXIT   0   /* exit(code)      */
+#define SYS_WRITE  1   /* write(ptr, len) */
+#define SYS_GETKEY 2   /* getkey() -> ASCII */
+#define SYS_CLEAR  3   /* clear()         */
+#define SYS_DRAW_RECT  4   /* rdi = PxGfxArgs* (x, y, w, h, r, g, b, a)     */
+#define SYS_DRAW_LINE  5   /* rdi = PxGfxArgs* (x1, y1, x2, y2, r, g, b, a) */
+#define SYS_SWAP       6   /* swapBuffers(0)                                */
+#define SYS_GET_MOUSE  7   /* get_mouse(PxMouse* out, int wait_click) */
 
 #define SYSCALL_VECTOR 0x80
 
@@ -36,9 +42,5 @@ int      px_install_hello(void);                  /* записать /hello н�
 /* interrupts.asm: переход в ring 3. Возвращает код выхода программы
  * (или 0xDEAD0000 | номер_вектора, если её убило исключение). */
 uint64_t exec_user(uint64_t entry, uint64_t user_rsp);
-#define SYS_EXIT   0   /* exit(code)      */
-#define SYS_WRITE  1   /* write(ptr, len) */
-#define SYS_GETKEY 2   /* getkey() -> ASCII */
-#define SYS_CLEAR  3   /* clear()         */
 
 int kbd_wait_char(void);

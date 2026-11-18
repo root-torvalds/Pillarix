@@ -4,6 +4,9 @@ extern volatile int has_keyboard_event;
 extern volatile int has_mouse_event;
 extern volatile uint8_t last_scancode;
 
+volatile int mouse_buttons = 0;
+volatile int mouse_click_event = 0;
+
 int mouse_last_x = 512;
 int mouse_last_y = 384;
 int mouse_cycle = 0;
@@ -81,7 +84,7 @@ void mouse_handler_c() {
     uint8_t status = inb(0x64);
 
     if ((status & 0x01) == 0 || (status & 0x20) == 0) {
-        send_apic_eoi(); // Вместо отправки на старые порты PIC
+        send_apic_eoi();
         return;
     }
 
@@ -108,8 +111,14 @@ void mouse_handler_c() {
 
         if (mouse_x < 0)    mouse_x = 0;
         if (mouse_y < 0)    mouse_y = 0;
-        if (mouse_x > 1023) mouse_x = 1023;
-        if (mouse_y > 767)  mouse_y = 767;
+        if (mouse_x > 1919) mouse_x = 1919;
+        if (mouse_y > 1079) mouse_y = 1079;
+
+        int prev_btn = mouse_buttons;
+        mouse_buttons = mouse_bytes[0] & 0x07;
+        if ((mouse_buttons & ~prev_btn) != 0) {
+            mouse_click_event = 1;
+        }
 
         has_mouse_event = 1;
 

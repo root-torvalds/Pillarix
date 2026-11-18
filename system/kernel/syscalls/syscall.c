@@ -1,6 +1,15 @@
 #include <stdint.h>
 #include "../kernel/kernel.h"
 
+typedef struct __attribute__((packed)) {
+    uint32_t x;
+    uint32_t y;
+    uint32_t buttons;   /* 1 = ЛКМ, 2 = ПКМ, 4 = СКМ */
+} PxMouse;
+
+extern int mouse_x, mouse_y;
+extern volatile int mouse_buttons, mouse_click_event;
+
 #define OUT_LINE_H  20
 #define OUT_CHAR_W  10
 
@@ -55,12 +64,48 @@ static int64_t sys_clear(void) {
     return 0;
 }
 
+typedef struct __attribute__((packed)) {
+    uint32_t a, b, c, d;
+    uint8_t  r, g, bl, al;
+} PxGfxArgs;
+
 int64_t syscall_dispatch(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3) {
     (void)a3;
     switch (num) {
         case SYS_WRITE:  return sys_write((const char*)a1, a2);
         case SYS_GETKEY: return kbd_wait_char();
         case SYS_CLEAR:  return sys_clear();
-        default:         return -1;
+        case SYS_DRAW_RECT: {
+            if (!user_ptr_ok(a1, sizeof(PxGfxArgs))) return -1;
+            const PxGfxArgs* p = (const PxGfxArgs*)a1;
+            drawRect(p->a, p->b, p->c, p->d, p->r, p->g, p->bl, p->al);
+            return 0;
+        }
+        case SYS_DRAW_LINE: {
+            if (!user_ptr_ok(a1, sizeof(PxGfxArgs))) return -1;
+            const PxGfxArgs* p = (const PxGfxArgs*)a1;
+            drawLine(p->a, p->b, p->c, p->d, p->r, p->g, p->bl, p->al);
+            return 0;
+        }
+        case SYS_SWAP:
+            swapBuffers(0);
+            return 0;
+        case SYS_GET_MOUSE: {
+            if (!user_ptr_ok(a1, sizeof(PxMouse))) return -1;
+            if (a2) {
+                mouse_click_event = 0;
+                while (!mouse_click_event) {
+                    __asm__ volatile("hlt");
+                }
+                mouse_click_event = 0;
+            }
+            PxMouse* m = (PxMouse*)a1;
+            m->x = (uint32_t)mouse_x;
+            m->y = (uint32_t)mouse_y;
+            m->buttons = (uint32_t)mouse_buttons;
+            return (int64_t)m->buttons;
+        }
+        default:
+            return -1;
     }
 }

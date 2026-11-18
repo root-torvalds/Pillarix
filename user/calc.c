@@ -1,13 +1,19 @@
 #include "px.h"
 
 int main(void) {
-    printf("Press any key (q to quit):\n");
+    fillScreen(25, 25, 35, 255);
+    drawRect(100, 100, 200, 60, 0, 140, 255, 255);  /* кнопка выхода */
+    swapBuffers();
+
+    PxMouse m;
     for (;;) {
-        char c = sys_getkey();
-        if (c == 'q') break;
-        char buf[2] = { c, '\n' };
-        sys_write(buf, 2);
+        wait_click(&m);
+        if ((m.buttons & MOUSE_LEFT) &&
+            m.x >= 100 && m.x < 300 &&
+            m.y >= 100 && m.y < 160) {
+            break;   /* кликнули по кнопке */
+            }
     }
-    printf("Bye!\n");
+    sys_clear();
     return 0;
 }
