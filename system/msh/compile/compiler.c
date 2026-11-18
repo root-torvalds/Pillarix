@@ -272,13 +272,14 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         printf("  ls      - List directory contents", out_x, out_y + line_height * 4, 150, 150, 150, 255);
         printf("  cd      - Change current directory", out_x, out_y + line_height * 5, 150, 150, 150, 255);
         printf("  pwd     - Print working directory", out_x, out_y + line_height * 6, 150, 150, 150, 255);
-        printf("  cat     - Display file contents", out_x, out_y + line_height * 7, 150, 150, 150, 255);
-        printf("  touch   - Create an empty file", out_x, out_y + line_height * 8, 150, 150, 150, 255);
-        printf("  edit    - Edit file (RShift+Enter to save)", out_x, out_y + line_height * 9, 150, 150, 150, 255);
-        printf("  install - Format disk and install OS", out_x, out_y + line_height * 10, 150, 150, 150, 255);
-        printf("  math    - Calculator: math 2*(3+4)", out_x, out_y + line_height * 11, 150, 150, 150, 255);
-        printf("  ./name  - Run program from disk: ./hello", out_x, out_y + line_height * 12, 150, 150, 150, 255);
-        return 14;
+        printf("  mkdir   - Create a new directory", out_x, out_y + line_height * 7, 150, 150, 150, 255);
+        printf("  cat     - Display file contents", out_x, out_y + line_height * 8, 150, 150, 150, 255);
+        printf("  touch   - Create an empty file", out_x, out_y + line_height * 9, 150, 150, 150, 255);
+        printf("  edit    - Edit file (RShift+Enter to save)", out_x, out_y + line_height * 10, 150, 150, 150, 255);
+        printf("  install - Format disk and install OS", out_x, out_y + line_height * 11, 150, 150, 150, 255);
+        printf("  math    - Calculator: math 2*(3+4)", out_x, out_y + line_height * 12, 150, 150, 150, 255);
+        printf("  ./name  - Run program from disk: ./hello", out_x, out_y + line_height * 13, 150, 150, 150, 255);
+        return 15;
     } else if (term_strcmp(argv[0], "ver") == 0) {
         printf("Pillarix OS v4-alpha", out_x, out_y, 0, 255, 100, 255);
         return 1;
@@ -305,7 +306,31 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         }
         current_dir[k] = '\0';
         return 0;
+    } else if (term_strcmp(argv[0], "mkdir") == 0) {
+        if (argc > 1) {
+            char full_path[300];
+            char dir_path[300];
+            char dir_name[256];
+            term_resolve_path(argv[1], full_path, sizeof(full_path));
+            ext4_split_path(full_path, dir_path, dir_name);
 
+            int res = ext4_create_dir(dir_path, dir_name);
+            if (res == 0) {
+                printf("Directory created successfully", out_x, out_y, 0, 255, 0, 255);
+            } else if (res == -1) {
+                printf("mkdir: Parent dir not found", out_x, out_y, 255, 80, 80, 255);
+            } else if (res == -12) {
+                printf("mkdir: Directory is full", out_x, out_y, 255, 80, 80, 255);
+            } else if (res == -15) {
+                printf("mkdir: Invalid name or already exists", out_x, out_y, 255, 80, 80, 255);
+            } else {
+                printf("mkdir: Failed to create directory", out_x, out_y, 255, 80, 80, 255);
+            }
+            return 1;
+        } else {
+            printf("Usage: mkdir <dirname>", out_x, out_y, 255, 80, 80, 255);
+            return 1;
+        }
     } else if (term_strcmp(argv[0], "ls") == 0) {
         char resolved[300];
         term_resolve_path((argc > 1) ? argv[1] : "", resolved, sizeof(resolved));

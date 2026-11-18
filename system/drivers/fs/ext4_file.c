@@ -202,8 +202,52 @@ int ext4_create_file(const char* path, const char* name, uint16_t mode,
     return create_new_file(dir_ino, &dir_inode, dir_block, dir_buf, name, mode, data, len);
 }
 
-/* Пока заглушка: каталоги создаёт только mkfs */
-bool ext4_create_dir(const char* path, const char* name) {
-    (void)path; (void)name;
-    return true;
+/* Создаёт каталог name в каталоге path. Возвращает 0 или код EXT4_E_*. */
+int ext4_create_dir(const char* path, const char* name) {
+    if (name == NULL || name[0] == '\0') return EXT4_E_BAD_NAME;
+
+    int name_len = 0;
+    while (name[name_len] != '\0') name_len++;
+
+    uint32_t dir_ino = ext4_find_inode_by_path(path);
+    if (dir_ino == 0) return EXT4_E_NO_PARENT;
+
+    Ext4Inode dir_inode;
+    uint32_t dir_block;
+    uint8_t dir_buf[EXT4_BLOCK_SIZE];
+    int err = ext4_load_dir(dir_ino, &dir_inode, &dir_block, dir_buf);
+    if (err != 0) return err;
+
+    /* Проверяем, не занято ли уже такое имя и хватит ли места в блоке */
+    if (ext4_dir_lookup(dir_buf, name) != 0) return EXT4_E_BAD_NAME;
+    if (!ext4_dir_has_room(dir_buf, name_len)) return EXT4_E_DIR_FULL;
+
+    uint32_t ino = ext4_alloc_inode();
+    if (ino == 0) return EXT4_E_NO_INODE;
+
+    uint32_t block = ext4_alloc_block();
+    if (block == 0) return EXT4_E_NO_BLOCK;
+
+    /* Форматируем блок нового каталога с записями "." и ".." */
+    ext4_dir_format(block, ino, dir_ino, NULL, NULL, NULL, 0);
+
+    /* Заполняем и сохраняем инод нового каталога */
+    Ext4Inode inode;
+    ext4_zero(&inode, sizeof(inode));
+    inode.i_mode        = EXT4_MODE_DIR;
+    inode.i_size_lo     = EXT4_BLOCK_SIZE;
+    inode.i_links_count = 2;
+    inode.i_blocks_lo   = 2;
+    ext4_set_extent(&inode, block, 1);
+    if (!ext4_write_inode(ino, &inode)) return EXT4_E_INODE_WRITE;
+
+    /* Добавляем запись в родительский каталог и обновляем его инод */
+    uint32_t added = ext4_dir_add_entry(dir_buf, name, ino, EXT4_FT_DIR);
+    if (!ext4_write_block(dir_block, dir_buf)) return EXT4_E_DISK_WRITE;
+
+    dir_inode.i_size_lo += added;
+    dir_inode.i_links_count++;
+    if (!ext4_write_inode(dir_ino, &dir_inode)) return EXT4_E_INODE_WRITE;
+
+    return 0;
 }
