@@ -16,6 +16,12 @@ typedef struct __attribute__((packed)) {
     uint32_t buttons;
 } PxMouse;
 
+typedef struct __attribute__((packed)) {
+    uint64_t text;
+    uint32_t x, y;
+    uint8_t  r, g, b, a;
+} PxTextArgs;
+
 static inline int64_t syscall3(uint64_t n, uint64_t a1, uint64_t a2, uint64_t a3) {
     int64_t ret;
     __asm__ volatile("int $0x80"
@@ -37,6 +43,11 @@ static inline uint32_t get_mouse(PxMouse* m) {
 static inline uint32_t wait_click(PxMouse* m) {
     return (uint32_t)syscall3(7, (uint64_t)m, 1, 0);
 }
+
+static inline uint32_t wait_mouse(PxMouse* m) {
+    return (uint32_t)syscall3(7, (uint64_t)m, 2, 0);
+}
+
 
 static inline void printf(const char* s) {
     uint64_t n = 0;
@@ -64,6 +75,13 @@ static inline void drawLine(uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2,
 static inline void fillScreen(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
     drawRect(0, 0, 1920, 1080, r, g, b, a);
 }
+
+static inline void drawText(const char* text, uint32_t x, uint32_t y,
+                            uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    PxTextArgs args = { (uint64_t)text, x, y, r, g, b, a };
+    syscall3(8, (uint64_t)&args, 0, 0);
+}
+
 
 static inline void swapBuffers(void) {
     syscall3(6, 0, 0, 0);

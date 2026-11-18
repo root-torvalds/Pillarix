@@ -7,6 +7,12 @@ typedef struct __attribute__((packed)) {
     uint32_t buttons;   /* 1 = ЛКМ, 2 = ПКМ, 4 = СКМ */
 } PxMouse;
 
+typedef struct __attribute__((packed)) {
+    uint64_t text;
+    uint32_t x, y;
+    uint8_t  r, g, b, a;
+} PxTextArgs;
+
 extern int mouse_x, mouse_y;
 extern volatile int mouse_buttons, mouse_click_event;
 
@@ -92,18 +98,37 @@ int64_t syscall_dispatch(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3) {
             return 0;
         case SYS_GET_MOUSE: {
             if (!user_ptr_ok(a1, sizeof(PxMouse))) return -1;
-            if (a2) {
+            if (a2 == 1) {
                 mouse_click_event = 0;
                 while (!mouse_click_event) {
                     __asm__ volatile("hlt");
                 }
                 mouse_click_event = 0;
+            } else if (a2 == 2) {
+                __asm__ volatile("hlt");
             }
             PxMouse* m = (PxMouse*)a1;
             m->x = (uint32_t)mouse_x;
             m->y = (uint32_t)mouse_y;
             m->buttons = (uint32_t)mouse_buttons;
             return (int64_t)m->buttons;
+        }
+        case SYS_DRAW_TEXT: {
+            if (!user_ptr_ok(a1, sizeof(PxTextArgs))) return -1;
+            const PxTextArgs* p = (const PxTextArgs*)a1;
+            if (!p->text) return -1;
+
+            /* Проверяем, что строка лежит в памяти пользователя и содержит '\0' */
+            const char* s = (const char*)p->text;
+            uint64_t len = 0;
+            while (user_ptr_ok(p->text + len, 1)) {
+                if (s[len] == '\0') break;
+                len++;
+            }
+            if (!user_ptr_ok(p->text + len, 1) || s[len] != '\0') return -1;
+
+            printf(s, p->x, p->y, p->r, p->g, p->b, p->a);
+            return 0;
         }
         default:
             return -1;
