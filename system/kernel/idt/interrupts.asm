@@ -173,7 +173,7 @@ exec_user:
     push 0x23                   ; CS  = USER_CS (0x20 | 3)
     push rcx                    ; RIP = точка входа                   ; RIP = точка входа
 
-    xor eax, eax                ; не отдаём программе регистры ядра
+    xor eax, eax
     xor ebx, ebx
     xor ecx, ecx
     xor edx, edx

@@ -1,6 +1,5 @@
 #include <stdint.h>
 #include "../kernel/kernel.h"
-#include "hello_bin.h"
 
 #define PX_MAX      (16 * 1024)   /* образ программы */
 #define USER_STACK  (16 * 1024)   /* стек программы  */
@@ -8,7 +7,7 @@
 /* Вся память пользователя: образ в начале, стек в конце. */
 static uint8_t user_mem[PX_MAX + USER_STACK] __attribute__((aligned(4096)));
 
-/* rsp ядра на момент запуска программы (см. exec_user в interrupts.asm) */
+/* rsp ядра на момент запуска программы */
 uint64_t exec_saved_rsp;
 
 int user_ptr_ok(uint64_t ptr, uint64_t len) {
@@ -130,12 +129,4 @@ int px_run(const char* name, int x, int y) {
         lines++;
     }
     return lines;
-}
-
-/* Записать готовую программу /hello в корень ext4 */
-int px_install_hello(void) {
-    char dir[300];
-    char name[256];
-    ext4_split_path("/hello", dir, name);
-    return ext4_create_file(dir, name, 0x81ED /* -rwxr-xr-x */, hello_plx, sizeof(hello_plx));
 }

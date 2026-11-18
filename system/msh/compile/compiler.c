@@ -210,7 +210,6 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         printf("  install - Format disk and install OS", out_x, out_y + line_height * 8, 150, 150, 150, 255);
         printf("  math    - Calculator: math 2*(3+4)", out_x, out_y + line_height * 9, 150, 150, 150, 255);
         printf("  ./name  - Run program from disk: ./hello", out_x, out_y + line_height * 10, 150, 150, 150, 255);
-        printf("  mkhello - Write /hello program to disk", out_x, out_y + line_height * 11, 150, 150, 150, 255);
         return 12;
     } else if (term_strcmp(argv[0], "ver") == 0) {
         printf("Pillarix OS v4-alpha", out_x, out_y, 0, 255, 100, 255);
@@ -318,13 +317,8 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         return 1;
     } else if (argv[0][0] == '.' && argv[0][1] == '/') {
         return px_run(argv[0] + 2, out_x, out_y);
-    } else if (term_strcmp(argv[0], "mkhello") == 0) {
-        if (px_install_hello() == 0) printf("/hello written", out_x, out_y, 0, 255, 0, 255);
-        else                         printf("mkhello: failed", out_x, out_y, 255, 80, 80, 255);
-        return 1;
     } else if (term_strcmp(argv[0], "install") == 0) {
         mkfs_ext4();
-        px_install_hello();
         printf("OS installed successfully! Filesystem formatted.", out_x, out_y, 0, 255, 0, 255);
         return 1;
     } else if (term_strcmp(argv[0], "clear") == 0) {

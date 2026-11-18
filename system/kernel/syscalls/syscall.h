@@ -37,7 +37,6 @@ int      sys_out_lines(void);           /* сколько строк она на
 int      user_ptr_ok(uint64_t ptr, uint64_t len);  /* [ptr, ptr+len) в памяти программы? */
 
 int      px_run(const char* name, int x, int y);  /* команда ./name          */
-int      px_install_hello(void);                  /* записать /hello на диск */
 
 /* interrupts.asm: переход в ring 3. Возвращает код выхода программы
  * (или 0xDEAD0000 | номер_вектора, если её убило исключение). */
