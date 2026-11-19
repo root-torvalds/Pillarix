@@ -1,8 +1,8 @@
 #include <stdint.h>
 #include "../kernel/kernel.h"
 
-#define PX_MAX      (16 * 1024)   /* образ программы */
-#define USER_STACK  (16 * 1024)   /* стек программы  */
+#define PX_MAX      (4 * 1024 * 1024)   /* до 4 МБ на образ программы */
+#define USER_STACK  (64 * 1024)         /* 64 КБ стек программы       */
 
 /* Вся память пользователя: образ в начале, стек в конце. */
 static uint8_t user_mem[PX_MAX + USER_STACK] __attribute__((aligned(4096)));
@@ -27,7 +27,7 @@ int user_ptr_ok(uint64_t ptr, uint64_t len) {
 #define PTE_NX    (1ULL << 63)
 #define PTE_ADDR  0x000FFFFFFFFFF000ULL
 
-#define PT_POOL   4
+#define PT_POOL   16
 static uint64_t pt_pool[PT_POOL][512] __attribute__((aligned(4096)));
 static int pt_pool_used;
 

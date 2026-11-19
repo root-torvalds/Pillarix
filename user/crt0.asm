@@ -1,11 +1,12 @@
 [bits 64]
 default rel
 extern main
+extern _end
 
 section .plx_hdr
     db 'P', 'L', 'X', '0'
     dd _start - $$
-    dd 16384
+    dd _end - $$
     dd 0
 
 section .text

@@ -281,7 +281,7 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         printf("  ./name  - Run program from disk: ./hello", out_x, out_y + line_height * 13, 150, 150, 150, 255);
         return 15;
     } else if (term_strcmp(argv[0], "ver") == 0) {
-        printf("Pillarix OS v4-alpha", out_x, out_y, 0, 255, 100, 255);
+        printf("Pillarix OS v4C-RC", out_x, out_y, 0, 255, 100, 255);
         return 1;
     } else if (term_strcmp(argv[0], "reboot") == 0) {
         sys_reset();

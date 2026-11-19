@@ -70,8 +70,6 @@ int ext4_cat(const char* path, int x, int y) {
     return lines > 0 ? lines : 1;
 }
 
-/* Читает файл в buf (не больше max_size байт). Возвращает число байт
- * или отрицательный код. */
 int ext4_read_file_to_buffer(const char* path, void* buf, uint32_t max_size) {
     uint32_t ino = ext4_find_inode_by_path(path);
     if (ino == 0) return EXT4_E_NOENT;
@@ -80,19 +78,41 @@ int ext4_read_file_to_buffer(const char* path, void* buf, uint32_t max_size) {
     if (!ext4_read_inode(ino, &inode)) return EXT4_E_IO;
     if ((inode.i_mode & EXT4_S_IFMT) == EXT4_S_IFDIR) return EXT4_E_ISDIR;
 
-    uint32_t block = ext4_inode_first_block(&inode);
-    if (block == 0) return 0;
+    const struct ext4_extent_header* hdr = (const struct ext4_extent_header*)inode.i_block;
+    if (hdr->eh_magic != EXT4_EXT_MAGIC || hdr->eh_entries == 0) return 0;
 
-    uint8_t data[EXT4_BLOCK_SIZE];
-    ext4_zero(data, sizeof(data));
-    ext4_read_block(block, data);
-
-    uint32_t size = file_size_in_block(&inode, data);
-    if (size > max_size) size = max_size;
+    uint32_t target_size = inode.i_size_lo;
+    if (target_size == 0) return 0;
+    if (target_size > max_size) target_size = max_size;
 
     uint8_t* dest = (uint8_t*)buf;
-    for (uint32_t i = 0; i < size; i++) dest[i] = data[i];
-    return (int)size;
+    uint32_t total_read = 0;
+    uint8_t block_buf[EXT4_BLOCK_SIZE];
+
+    const struct ext4_extent* exts =
+    (const struct ext4_extent*)(inode.i_block + sizeof(struct ext4_extent_header));
+
+    for (uint16_t e = 0; e < hdr->eh_entries && total_read < target_size; e++) {
+        uint32_t start_blk = exts[e].e_ee_start_lo;
+        uint16_t num_blks  = exts[e].e_ee_len;
+
+        for (uint16_t b = 0; b < num_blks && total_read < target_size; b++) {
+            ext4_zero(block_buf, sizeof(block_buf));
+            if (!ext4_read_block(start_blk + b, block_buf)) {
+                return (total_read > 0) ? (int)total_read : EXT4_E_IO;
+            }
+
+            uint32_t chunk = target_size - total_read;
+            if (chunk > EXT4_BLOCK_SIZE) chunk = EXT4_BLOCK_SIZE;
+
+            for (uint32_t i = 0; i < chunk; i++) {
+                dest[total_read + i] = block_buf[i];
+            }
+            total_read += chunk;
+        }
+    }
+
+    return (int)total_read;
 }
 
 /* touch передаёт data_size = 0 и пустую строку, редактор — настоящую длину.

@@ -13,6 +13,18 @@ typedef struct __attribute__((packed)) {
     uint8_t  r, g, b, a;
 } PxTextArgs;
 
+typedef struct __attribute__((packed)) {
+    uint32_t x, y, w, h;
+    uint32_t xRadius, yRadius, mode;
+    uint8_t  r, g, b, a;
+} PxRoundRectArgs;
+
+typedef struct __attribute__((packed)) {
+    uint32_t x, y, w, h;
+    int32_t  startAngle, spanAngle;
+    uint8_t  r, g, b, a;
+} PxArcArgs;
+
 extern int mouse_x, mouse_y;
 extern volatile int mouse_buttons, mouse_click_event;
 
@@ -158,6 +170,53 @@ int64_t syscall_dispatch(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3) {
             }
             buf[len] = '\0';
             return (int64_t)measure_text(buf);
+        }
+        case SYS_DRAW_ROUND_RECT: {
+            if (!user_ptr_ok(a1, sizeof(PxRoundRectArgs))) return -1;
+            const PxRoundRectArgs* p = (const PxRoundRectArgs*)a1;
+            drawRoundedRect((int)p->x, (int)p->y, (int)p->w, (int)p->h,
+                            (int)p->xRadius, (int)p->yRadius, (int)p->mode,
+                            p->r, p->g, p->b, p->a);
+            return 0;
+        }
+        case SYS_DRAW_ARC: {
+            if (!user_ptr_ok(a1, sizeof(PxArcArgs))) return -1;
+            const PxArcArgs* p = (const PxArcArgs*)a1;
+            drawArc((int)p->x, (int)p->y, (int)p->w, (int)p->h,
+                    (int)p->startAngle, (int)p->spanAngle,
+                    p->r, p->g, p->b, p->a);
+            return 0;
+        }
+        case SYS_DRAW_PIE: {
+            if (!user_ptr_ok(a1, sizeof(PxArcArgs))) return -1;
+            const PxArcArgs* p = (const PxArcArgs*)a1;
+            drawPie((int)p->x, (int)p->y, (int)p->w, (int)p->h,
+                    (int)p->startAngle, (int)p->spanAngle,
+                    p->r, p->g, p->b, p->a);
+            return 0;
+        }
+        case SYS_DRAW_CHORD: {
+            if (!user_ptr_ok(a1, sizeof(PxArcArgs))) return -1;
+            const PxArcArgs* p = (const PxArcArgs*)a1;
+            drawChord((int)p->x, (int)p->y, (int)p->w, (int)p->h,
+                      (int)p->startAngle, (int)p->spanAngle,
+                      p->r, p->g, p->b, p->a);
+            return 0;
+        }
+        case SYS_FILL_ELLIPSE: {
+            if (!user_ptr_ok(a1, sizeof(PxGfxArgs))) return -1;
+            const PxGfxArgs* p = (const PxGfxArgs*)a1;
+            fillEllipse((int)p->a, (int)p->b, (int)p->c, (int)p->d,
+                        p->r, p->g, p->bl, p->al);
+            return 0;
+        }
+        case SYS_FILL_ROUND_RECT: {
+            if (!user_ptr_ok(a1, sizeof(PxRoundRectArgs))) return -1;
+            const PxRoundRectArgs* p = (const PxRoundRectArgs*)a1;
+            fillRoundedRect((int)p->x, (int)p->y, (int)p->w, (int)p->h,
+                            (int)p->xRadius, (int)p->yRadius, (int)p->mode,
+                            p->r, p->g, p->b, p->a);
+            return 0;
         }
         default:
             return -1;

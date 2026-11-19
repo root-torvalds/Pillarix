@@ -4,6 +4,8 @@
 #define MOUSE_LEFT   1
 #define MOUSE_RIGHT  2
 #define MOUSE_MIDDLE 4
+#define QT_ABSOLUTE_SIZE 0
+#define QT_RELATIVE_SIZE 1
 
 typedef struct __attribute__((packed)) {
     uint32_t a, b, c, d;
@@ -21,6 +23,18 @@ typedef struct __attribute__((packed)) {
     uint32_t x, y;
     uint8_t  r, g, b, a;
 } PxTextArgs;
+
+typedef struct __attribute__((packed)) {
+    uint32_t x, y, w, h;
+    uint32_t xRadius, yRadius, mode;
+    uint8_t  r, g, b, a;
+} PxRoundRectArgs;
+
+typedef struct __attribute__((packed)) {
+    uint32_t x, y, w, h;
+    int32_t  startAngle, spanAngle;
+    uint8_t  r, g, b, a;
+} PxArcArgs;
 
 static inline int64_t syscall3(uint64_t n, uint64_t a1, uint64_t a2, uint64_t a3) {
     int64_t ret;
@@ -95,4 +109,45 @@ static inline uint32_t measureText(const char* text) {
 
 static inline void swapBuffers(void) {
     syscall3(6, 0, 0, 0);
+}
+
+static inline void drawRoundedRect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                                   uint32_t xRadius, uint32_t yRadius, uint32_t mode,
+                                   uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    PxRoundRectArgs args = { x, y, w, h, xRadius, yRadius, mode, r, g, b, a };
+    syscall3(11, (uint64_t)&args, 0, 0);
+}
+
+static inline void drawArc(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                           int32_t startAngle, int32_t spanAngle,
+                           uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    PxArcArgs args = { x, y, w, h, startAngle, spanAngle, r, g, b, a };
+    syscall3(12, (uint64_t)&args, 0, 0);
+}
+
+static inline void drawPie(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                           int32_t startAngle, int32_t spanAngle,
+                           uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    PxArcArgs args = { x, y, w, h, startAngle, spanAngle, r, g, b, a };
+    syscall3(13, (uint64_t)&args, 0, 0);
+}
+
+static inline void drawChord(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                             int32_t startAngle, int32_t spanAngle,
+                             uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    PxArcArgs args = { x, y, w, h, startAngle, spanAngle, r, g, b, a };
+    syscall3(14, (uint64_t)&args, 0, 0);
+}
+
+static inline void fillEllipse(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                               uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    PxGfxArgs args = { x, y, w, h, r, g, b, a };
+    syscall3(15, (uint64_t)&args, 0, 0);
+}
+
+static inline void fillRoundedRect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                                   uint32_t xRadius, uint32_t yRadius, uint32_t mode,
+                                   uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    PxRoundRectArgs args = { x, y, w, h, xRadius, yRadius, mode, r, g, b, a };
+    syscall3(16, (uint64_t)&args, 0, 0);
 }
