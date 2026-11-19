@@ -43,7 +43,6 @@ C_SRCS = boot/bootloader.c \
          system/kernel/idt/apic.c \
          system/drivers/idt/hda.c \
          system/graphic/display_manager.c \
-         system/msh/compile/compiler.c \
          system/kernel/syscalls/gdt.c \
          system/kernel/syscalls/syscall.c \
          system/kernel/syscalls/exec.c \
@@ -58,7 +57,7 @@ CXX_OBJS = $(addprefix build/, $(notdir $(CXX_SRCS:.cpp=_cpp.o)))
 
 OBJS = $(C_OBJS) $(CXX_OBJS) $(ASM_OBJS)
 
-vpath %.c boot system system/kernel/kernel system/graphic system/kernel/idt system/drivers/idt system/kernel/alloc system/drivers/fs system/drivers/virtio system/msh/compile system/kernel/syscalls
+vpath %.c boot system system/kernel/kernel system/graphic system/kernel/idt system/drivers/idt system/kernel/alloc system/drivers/fs system/drivers/virtio system/kernel/syscalls
 vpath %.cpp system/drivers/idt system/drivers/virtio
 vpath %.asm system/kernel/idt
 
@@ -121,7 +120,7 @@ DEST ?= /$(APP)
 
 app:
 	nasm -f elf64 user/crt0.asm -o build/crt0.o
-	gcc -ffreestanding -nostdlib -mno-red-zone -fPIE -fvisibility=hidden -Os -fno-asynchronous-unwind-tables -c user/$(APP).c -o build/$(APP).o
+	gcc -ffreestanding -nostdlib -mno-red-zone -fPIE -fvisibility=hidden -Os -fno-asynchronous-unwind-tables -I. -Iuser -c user/$(APP).c -o build/$(APP).o
 	ld -z max-page-size=0x10 -T user/user.ld -o build/$(APP).elf build/crt0.o build/$(APP).o
 	objcopy -O binary build/$(APP).elf build/$(APP).plx
 	python3 utils/put_plx.py disk.img build/$(APP).plx $(DEST)

@@ -97,6 +97,12 @@ typedef struct __attribute__((packed)) {
 
 extern void sys_reset(void);
 extern void sys_shutdown(void);
+extern EFI_GRAPHICS_OUTPUT_BLT_PIXEL* virtual_framebuffer;
+
+#define SHM_SLOTS 8
+#define SHM_SIZE  (512 * 1024)
+static uint8_t shm_pool[SHM_SLOTS][SHM_SIZE] __attribute__((aligned(4096)));
+static uint8_t shm_used[SHM_SLOTS];
 
 typedef struct __attribute__((packed)) {
     uint32_t cpu_id;
@@ -334,6 +340,30 @@ int64_t syscall_dispatch(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3) {
             char path[300];
             if (copy_user_str(a1, path, sizeof(path)) < 0) return -1;
             return (int64_t)ext4_remove(path);
+        }
+        case SYS_MAP_FB: {
+            if (!virtual_framebuffer) return 0;
+            if (vm_map_user((void*)virtual_framebuffer, 1920ULL * 1080ULL * 4ULL, 0) != 0) return 0;
+            return (int64_t)(uint64_t)virtual_framebuffer;
+        }
+        case SYS_FB_FLUSH:
+            swapBuffers(0);
+            return 0;
+        case SYS_SHM_ALLOC: {
+            if (a1 == 0 || a1 > SHM_SIZE) return -1;
+            for (int i = 0; i < SHM_SLOTS; i++) {
+                if (!shm_used[i]) {
+                    if (vm_map_user(shm_pool[i], SHM_SIZE, 0) != 0) return -1;
+                    shm_used[i] = 1;
+                    return (int64_t)i;
+                }
+            }
+            return -1;
+        }
+        case SYS_SHM_MAP: {
+            if (a1 >= SHM_SLOTS || !shm_used[a1]) return 0;
+            if (vm_map_user(shm_pool[a1], SHM_SIZE, 0) != 0) return 0;
+            return (int64_t)(uint64_t)shm_pool[a1];
         }
         default:
             return -1;

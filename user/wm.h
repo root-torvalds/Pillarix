@@ -182,7 +182,6 @@ static inline void wm_bring_to_front(WindowManager* wm, Window* target) {
     }
 }
 
-// Обработка мыши: перетаскивание, клики по кнопкам и усыпление CPU при простое
 static inline void wm_update(WindowManager* wm) {
     if (wm->dragged_win) {
         get_mouse(&wm->mouse);
@@ -264,7 +263,7 @@ static inline void wm_render(WindowManager* wm) {
 
         int32_t title_h = (w->flags & WIN_DEFAULT) ? TITLE_BAR_HEIGHT : 0;
 
-        // Клиппинг самого окна относительно левого (0) и верхнего (0) края экрана
+        // Клиппинг самого окна относительно левого и верхнего края экрана
         int32_t win_x = (w->x < 0) ? 0 : w->x;
         int32_t win_y = (w->y < 0) ? 0 : w->y;
         int32_t win_w = w->w - (win_x - w->x);
@@ -286,7 +285,6 @@ static inline void wm_render(WindowManager* wm) {
                     fillRoundedRect(win_x, win_y, win_w, th, 8, 8, QT_ABSOLUTE_SIZE, 24, 24, 28, 255);
                 }
 
-                // Заголовок (рисуем, если левый край не уехал далеко за экран)
                 if (w->x + 12 >= 0 && w->y + 20 >= 0) {
                     drawText(w->title, w->x + 12, w->y + 20, 230, 230, 235, 255);
                 }

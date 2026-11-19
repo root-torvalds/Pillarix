@@ -35,6 +35,10 @@
 #define SYS_REBOOT          30
 #define SYS_SHUTDOWN        31
 #define SYS_FS_REMOVE       32
+#define SYS_MAP_FB          33
+#define SYS_FB_FLUSH        34
+#define SYS_SHM_ALLOC       35
+#define SYS_SHM_MAP         36
 
 #define SYSCALL_VECTOR 0x80
 #define PLX_MAGIC 0x30584C50u
@@ -55,5 +59,6 @@ int      px_run(const char* name, int x, int y);
 int      px_run_mode(const char* name, int x, int y, int background);
 int      px_spawn(const char* name);
 uint64_t px_wait(int tid);
+int      vm_map_user(void* addr, uint64_t len, int exec);
 
 int kbd_wait_char(void);

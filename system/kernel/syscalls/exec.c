@@ -41,7 +41,7 @@ static uint64_t* split_large(uint64_t e, int lvl) {
     return t;
 }
 
-static int vm_map_user(void* addr, uint64_t len, int exec) {
+int vm_map_user(void* addr, uint64_t len, int exec) {
     uint64_t irq_flags = spin_lock_irqsave(&vm_lock);
     uint64_t cr0, cr3;
     __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));

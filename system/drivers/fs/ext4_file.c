@@ -288,7 +288,6 @@ static bool dir_name_match(const Ext4DirectoryEntry* de, const char* name) {
     return de->name_len == n && name[n] == '\0';
 }
 
-/* Удаляет файл или пустой каталог. Возвращает 0 или отрицательный код ошибки. */
 int ext4_remove(const char* path) {
     if (!path || path[0] != '/' || path[1] == '\0') return EXT4_E_BAD_NAME;
 
@@ -327,11 +326,10 @@ int ext4_remove(const char* path) {
                 entries++;
                 off += de->rec_len;
             }
-            if (entries > 2) return -21; /* каталог не пуст */
+            if (entries > 2) return -21;
         }
     }
 
-    /* Удаляем запись из родительского каталога, расширяя rec_len предыдущей записи */
     uint32_t off = 0, prev_off = 0;
     bool removed = false;
     while (off < EXT4_BLOCK_SIZE) {
@@ -357,7 +355,6 @@ int ext4_remove(const char* path) {
         ext4_write_inode(dir_ino, &dir_inode);
     }
 
-    /* Освобождаем блоки данных по экстентам */
     const struct ext4_extent_header* hdr = (const struct ext4_extent_header*)target.i_block;
     if (hdr->eh_magic == EXT4_EXT_MAGIC && hdr->eh_entries > 0) {
         const struct ext4_extent* exts =
@@ -370,7 +367,6 @@ int ext4_remove(const char* path) {
         }
     }
 
-    /* Освобождаем инод */
     ext4_zero(&target, sizeof(target));
     ext4_write_inode(target_ino, &target);
     if (target_ino > 0) bitmap_clear_bit(EXT4_INODE_BITMAP_BLOCK, target_ino - 1);

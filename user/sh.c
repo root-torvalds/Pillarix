@@ -1,4 +1,4 @@
-#include "px.h"
+#include "gfx.h"
 
 #define LINE_HEIGHT   20
 #define CHAR_W        10
@@ -342,28 +342,23 @@ static int exec_command(char* cmd, int* line_ptr) {
 
     if (str_cmp(argv[0], "help") == 0) {
         drawText("Available commands:", out_x, out_y, 200, 200, 200, 255);
-        const char* help_lines[] = {
-            "  ver      - Display OS version",
-            "  clear    - Clear terminal screen",
-            "  reboot   - Restart the system",
-            "  shutdown - Power off the system",
-            "  ls       - List directory contents",
-            "  cd       - Change current directory",
-            "  pwd      - Print working directory",
-            "  mkdir    - Create a new directory",
-            "  cat      - Display file contents",
-            "  touch    - Create an empty file",
-            "  edit     - Edit file (RShift+Enter to save)",
-            "  rm       - Remove file or empty directory",
-            "  install  - Format disk and install OS",
-            "  math     - Calculator: math 2*(3+4)",
-            "  ./name   - Run program (add & for background)",
-            "  cores    - Show SMP cores and load",
-            "  ps       - Show running tasks"
-        };
-        for (int i = 0; i < 17; i++) {
-            drawText(help_lines[i], out_x, out_y + (i + 1) * LINE_HEIGHT, 150, 150, 150, 255);
-        }
+        drawText("  ver      - Display OS version",                  out_x, out_y + LINE_HEIGHT * 1,  150, 150, 150, 255);
+        drawText("  clear    - Clear terminal screen",               out_x, out_y + LINE_HEIGHT * 2,  150, 150, 150, 255);
+        drawText("  reboot   - Restart the system",                  out_x, out_y + LINE_HEIGHT * 3,  150, 150, 150, 255);
+        drawText("  shutdown - Power off the system",                out_x, out_y + LINE_HEIGHT * 4,  150, 150, 150, 255);
+        drawText("  ls       - List directory contents",             out_x, out_y + LINE_HEIGHT * 5,  150, 150, 150, 255);
+        drawText("  cd       - Change current directory",            out_x, out_y + LINE_HEIGHT * 6,  150, 150, 150, 255);
+        drawText("  pwd      - Print working directory",             out_x, out_y + LINE_HEIGHT * 7,  150, 150, 150, 255);
+        drawText("  mkdir    - Create a new directory",              out_x, out_y + LINE_HEIGHT * 8,  150, 150, 150, 255);
+        drawText("  cat      - Display file contents",               out_x, out_y + LINE_HEIGHT * 9,  150, 150, 150, 255);
+        drawText("  touch    - Create an empty file",                out_x, out_y + LINE_HEIGHT * 10, 150, 150, 150, 255);
+        drawText("  edit     - Edit file (RShift+Enter to save)",    out_x, out_y + LINE_HEIGHT * 11, 150, 150, 150, 255);
+        drawText("  rm       - Remove file or empty directory",      out_x, out_y + LINE_HEIGHT * 12, 150, 150, 150, 255);
+        drawText("  install  - Format disk and install OS",          out_x, out_y + LINE_HEIGHT * 13, 150, 150, 150, 255);
+        drawText("  math     - Calculator: math 2*(3+4)",            out_x, out_y + LINE_HEIGHT * 14, 150, 150, 150, 255);
+        drawText("  ./name   - Run program (add & for background)",  out_x, out_y + LINE_HEIGHT * 15, 150, 150, 150, 255);
+        drawText("  cores    - Show SMP cores and load",             out_x, out_y + LINE_HEIGHT * 16, 150, 150, 150, 255);
+        drawText("  ps       - Show running tasks",                  out_x, out_y + LINE_HEIGHT * 17, 150, 150, 150, 255);
         return 18;
     } else if (str_cmp(argv[0], "ver") == 0) {
         drawText("Pillarix OS v4C-RC (User Space Shell)", out_x, out_y, 0, 255, 100, 255);
@@ -550,6 +545,7 @@ static int exec_command(char* cmd, int* line_ptr) {
 }
 
 int main(void) {
+    gfx_init();
     fillScreen(0, 0, 0, 255);
     drawText("Pillarix User-Space Shell ready.", 0, 20, 0, 255, 100, 255);
 

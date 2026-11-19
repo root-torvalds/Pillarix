@@ -124,7 +124,7 @@ bool ext4_is_dir(const char* path);
 
 typedef struct __attribute__((packed)) {
     char    name[256];
-    uint8_t file_type; /* 1 = файл, 2 = каталог */
+    uint8_t file_type;
 } Ext4DirItem;
 
 int ext4_list_dir(const char* path, Ext4DirItem* out, uint32_t max_items);

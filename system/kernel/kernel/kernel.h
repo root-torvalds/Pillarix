@@ -39,9 +39,6 @@ extern volatile uint8_t last_scancode;
 #include "../../graphic/display_manager.h"
 #include "../../graphic/qt.h"
 
-// Подключения из system/msh/
-#include "../../msh/compile/compiler.h"
-
 #ifdef __cplusplus
 }
 #endif
