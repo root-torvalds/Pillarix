@@ -82,36 +82,43 @@ void sys_shutdown(void) {
     __asm__ __volatile__("cli; hlt");
 }
 
-void init_kernel() {
+void init_kernel(BootInfo* info) {
     init_gdt();
     printf("[KERNEL] Initializing GDT...", 50, 150, 255, 255, 0, 255);
     swapBuffers(0);
     init_idt();
-    printf("[KERNEL] Initializing IDT...", 50, 150, 255, 255, 0, 255);
+    printf("[KERNEL] Initializing IDT...", 50, 180, 255, 255, 0, 255);
     swapBuffers(0);
     disable_pic();
-    printf("[KERNEL] Disable PIC...", 50, 200, 255, 255, 0, 255);
+    printf("[KERNEL] Disable PIC...", 50, 210, 255, 255, 0, 255);
     swapBuffers(0);
     init_local_apic();
-    printf("[KERNEL] Initializing LAPIC...", 50, 250, 255, 255, 0, 255);
+    printf("[KERNEL] Initializing LAPIC...", 50, 240, 255, 255, 0, 255);
+    swapBuffers(0);
+    init_apic(info);
+    printf("[KERNEL] Parsing ACPI MADT...", 50, 270, 255, 255, 0, 255);
+    swapBuffers(0);
+    init_scheduler();
+    printf("[KERNEL] Initializing Scheduler...", 50, 300, 255, 255, 0, 255);
+    swapBuffers(0);
+    init_smp();
+    printf("[KERNEL] Starting SMP cores...", 50, 330, 255, 255, 0, 255);
     swapBuffers(0);
     init_lapic_timer(10000000);
-    printf("[KERNEL] Initializing LAPIC timer...", 50, 300, 255, 255, 0, 255);
+    printf("[KERNEL] Initializing LAPIC timer...", 50, 360, 255, 255, 0, 255);
     swapBuffers(0);
     init_ioapic();
-    printf("[KERNEL] Initializing I/O APIC...", 50, 350, 255, 255, 0, 255);
+    printf("[KERNEL] Initializing I/O APIC...", 50, 390, 255, 255, 0, 255);
     swapBuffers(0);
     init_mouse();
-    printf("[KERNEL] Initializing mouse...", 50, 400, 255, 255, 0, 255);
+    printf("[KERNEL] Initializing mouse...", 50, 420, 255, 255, 0, 255);
     swapBuffers(0);
     io_apic_set_redirect(1, 33);
-    printf("[KERNEL] I/O APIC set redirect...", 50, 450, 255, 255, 0, 255);
-    swapBuffers(0);
     init_intel_hda();
-    printf("[KERNEL] Initializing Intel HDA...", 50, 500, 255, 255, 0, 255);
+    printf("[KERNEL] Initializing Intel HDA...", 50, 450, 255, 255, 0, 255);
     swapBuffers(0);
     init_ahci();
-    printf("[KERNEL] Initializing AHCI...", 50, 550, 255, 255, 0, 255);
+    printf("[KERNEL] Initializing AHCI...", 50, 480, 255, 255, 0, 255);
     swapBuffers(0);
 }
 
@@ -141,12 +148,10 @@ static int history_str_eq(const char* s1, const char* s2) {
 
 static void history_add(const char* cmd) {
     if (cmd[0] == '\0') return;
-
     if (history_count > 0 && history_str_eq(cmd_history[history_count - 1], cmd)) {
         history_index = history_count;
         return;
     }
-
     if (history_count < HISTORY_MAX) {
         history_copy_str(cmd_history[history_count], cmd);
         history_count++;
@@ -189,14 +194,19 @@ int kbd_wait_char(void) {
     extern volatile uint8_t kbd_ring_buffer[];
     extern volatile int kbd_head;
     extern volatile int kbd_tail;
+    extern spinlock_t kbd_lock;
     static int shift = 0;
 
     for (;;) {
-        while (kbd_head == kbd_tail) {
-            __asm__ volatile("hlt");
+        uint64_t flags = spin_lock_irqsave(&kbd_lock);
+        if (kbd_head == kbd_tail) {
+            spin_unlock_irqrestore(&kbd_lock, flags);
+            __asm__ volatile("sti; hlt");
+            continue;
         }
         uint8_t sc = kbd_ring_buffer[kbd_tail];
         kbd_tail = (kbd_tail + 1) % KBD_BUFFER_SIZE;
+        spin_unlock_irqrestore(&kbd_lock, flags);
 
         if (sc == 0x2A || sc == 0x36) { shift = 1; continue; }
         if (sc == 0xAA || sc == 0xB6) { shift = 0; continue; }
@@ -211,7 +221,6 @@ int kbd_wait_char(void) {
 
 extern char current_dir[];
 
-/* В функции redraw_input_line замените вывод ">" на вывод текущего пути: */
 static void redraw_input_line(int line_num, const char* cmd_str, int cmd_len, int cur_pos, int show_cursor) {
     int start_y = line_num * LINE_HEIGHT;
 
@@ -226,7 +235,6 @@ static void redraw_input_line(int line_num, const char* cmd_str, int cmd_len, in
     printf(">", dir_len * char_w, start_y, 255, 255, 255, 255);
 
     int text_offset = (dir_len * char_w) + 12;
-
 
     for (int idx = 0; idx < cmd_len; idx++) {
         char str[2] = { cmd_str[idx], '\0' };
@@ -248,20 +256,19 @@ extern char active_edit_filename[];
 static void handle_keyboard_scancode(uint8_t current_scancode, char* command, int* i, int* cursor_pos, int* o, int* sh) {
     last_scancode = current_scancode;
     if (current_scancode == 0x2A) {
-        *sh = 1; // Left Shift press
+        *sh = 1;
     } else if (current_scancode == 0xAA) {
-        *sh = 0; // Left Shift release
+        *sh = 0;
     } else if (current_scancode == 0x36) {
         *sh = 1;
-        rshift_down = 1; // Right Shift press
+        rshift_down = 1;
     } else if (current_scancode == 0xB6) {
         *sh = 0;
-        rshift_down = 0; // Right Shift release
+        rshift_down = 0;
     } else if (current_scancode == 0x01) {
         // ESC
     } else if (in_edit_mode) {
-        // --- РЕЖИМ РЕДАКТИРОВАНИЯ ФАЙЛА (edit) ---
-        if (current_scancode == 0x1C) { // Enter
+        if (current_scancode == 0x1C) {
             if (*sh || rshift_down) {
                 char dir_path[300];
                 char file_name[256];
@@ -302,35 +309,27 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
                     edit_buffer[edit_buf_len] = '\0';
                 }
             }
-        } else if (current_scancode == 0x0E) { // Backspace
+        } else if (current_scancode == 0x0E) {
             if (edit_buf_len > 0) {
                 edit_buf_len--;
                 edit_buffer[edit_buf_len] = '\0';
             }
         } else {
-            char ascii = 0;
-            if (current_scancode == 0x39) {
-                ascii = ' ';
-            } else {
-                ascii = *sh ? kbd_make_shift[current_scancode] : kbd_make_normal[current_scancode];
-            }
-
+            char ascii = (current_scancode == 0x39) ? ' ' :
+                         (*sh ? kbd_make_shift[current_scancode] : kbd_make_normal[current_scancode]);
             if (ascii != 0 && edit_buf_len < EDIT_MAX) {
                 edit_buffer[edit_buf_len++] = ascii;
                 edit_buffer[edit_buf_len] = '\0';
             }
         }
     } else {
-        // --- ОБЫЧНЫЙ РЕЖИМ КОМАНДНОЙ СТРОКИ ---
-        if (current_scancode == 0x53) { // Delete
+        if (current_scancode == 0x53) {
             if (*cursor_pos < *i) {
-                for (int k = *cursor_pos; k < *i - 1; k++) {
-                    command[k] = command[k + 1];
-                }
+                for (int k = *cursor_pos; k < *i - 1; k++) command[k] = command[k + 1];
                 (*i)--;
                 command[*i] = '\0';
             }
-        } else if (current_scancode == 0x48) { // Стрелка вверх
+        } else if (current_scancode == 0x48) {
             if (history_count > 0 && history_index > 0) {
                 if (history_index == history_count) {
                     command[*i] = '\0';
@@ -341,7 +340,7 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
                 *i = history_str_len(command);
                 *cursor_pos = *i;
             }
-        } else if (current_scancode == 0x50) { // Стрелка вниз
+        } else if (current_scancode == 0x50) {
             if (history_index < history_count) {
                 history_index++;
                 if (history_index == history_count) {
@@ -352,24 +351,18 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
                 *i = history_str_len(command);
                 *cursor_pos = *i;
             }
-        } else if (current_scancode == 0x4B) { // Стрелка влево
+        } else if (current_scancode == 0x4B) {
+            if (*cursor_pos > 0) (*cursor_pos)--;
+        } else if (current_scancode == 0x4D) {
+            if (*cursor_pos < *i) (*cursor_pos)++;
+        } else if (current_scancode == 0x0E) {
             if (*cursor_pos > 0) {
-                (*cursor_pos)--;
-            }
-        } else if (current_scancode == 0x4D) { // Стрелка вправо
-            if (*cursor_pos < *i) {
-                (*cursor_pos)++;
-            }
-        } else if (current_scancode == 0x0E) { // Backspace
-            if (*cursor_pos > 0) {
-                for (int k = *cursor_pos - 1; k < *i - 1; k++) {
-                    command[k] = command[k + 1];
-                }
+                for (int k = *cursor_pos - 1; k < *i - 1; k++) command[k] = command[k + 1];
                 (*i)--;
                 (*cursor_pos)--;
                 command[*i] = '\0';
             }
-        } else if (current_scancode == 0x1C) { // Enter
+        } else if (current_scancode == 0x1C) {
             redraw_input_line(*o, command, *i, *cursor_pos, 0);
 
             if (*i > 0) {
@@ -379,10 +372,10 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
 
                 int result = terminal_execute_command(command, 0, *o, *o);
 
-                if (result == -1) { // clear
+                if (result == -1) {
                     fillScreen(0, 0, 0, 255);
                     *o = 1;
-                } else if (result == -2) { // Запуск режима edit
+                } else if (result == -2) {
                     if (active_edit_filename[0] == '\0') {
                         printf("edit: empty file name", 0, ((*o) + 1) * LINE_HEIGHT, 255, 80, 80, 255);
                         *o += 2;
@@ -411,17 +404,10 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
 
             redraw_input_line(*o, command, *i, *cursor_pos, 1);
         } else {
-            char ascii = 0;
-            if (current_scancode == 0x39) {
-                ascii = ' ';
-            } else {
-                ascii = *sh ? kbd_make_shift[current_scancode] : kbd_make_normal[current_scancode];
-            }
-
+            char ascii = (current_scancode == 0x39) ? ' ' :
+                         (*sh ? kbd_make_shift[current_scancode] : kbd_make_normal[current_scancode]);
             if (ascii != 0 && *i < 510) {
-                for (int k = *i; k > *cursor_pos; k--) {
-                    command[k] = command[k - 1];
-                }
+                for (int k = *i; k > *cursor_pos; k--) command[k] = command[k - 1];
                 command[*cursor_pos] = ascii;
                 (*i)++;
                 (*cursor_pos)++;
@@ -433,12 +419,11 @@ static void handle_keyboard_scancode(uint8_t current_scancode, char* command, in
 
 #ifdef __cplusplus
 extern "C" {
-    #endif
-    void __attribute__((ms_abi)) screen_switch_to_virtio(void);
-    int  __attribute__((ms_abi)) init_virtio_gpu(void);
-
-    int  __attribute__((ms_abi)) virtio_gpu_setup_screen(void);
-    #ifdef __cplusplus
+#endif
+void __attribute__((ms_abi)) screen_switch_to_virtio(void);
+int  __attribute__((ms_abi)) init_virtio_gpu(void);
+int  __attribute__((ms_abi)) virtio_gpu_setup_screen(void);
+#ifdef __cplusplus
 }
 #endif
 
@@ -450,7 +435,7 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
     initScreenDriver(info);
     fillScreen(0, 0, 0, 255);
     swapBuffers(0);
-    init_kernel();
+    init_kernel(info);
 
     printf("[KERNEL] Initializing VirtIO GPU Transport...", 50, 650, 255, 255, 0, 255);
     int res = init_virtio_gpu();
@@ -462,51 +447,13 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
     printf("SUCCESS!", 500, 100, 0, 255, 0, 255);
     swapBuffers(0);
 
-    printf("[KERNEL] Running virtio_gpu_setup_screen...", 50, 700, 255, 255, 0, 255);
-    swapBuffers(0);
-
     int screen_res = virtio_gpu_setup_screen();
-    printf("DONE!", 500, 130, 0, 255, 0, 255);
-    swapBuffers(0);
-
     if (screen_res == 0) {
-
         screenSwitchToVirtio();
-
-        printf("VirtIO GPU Display Setup: SUCCESS!", 50, 400, 0, 255, 0, 255);
-        swapBuffers(0);
-
         virtio_gpu_redraw();
-
-        printf("[KERNEL] Initializing Hardware Cursor Plane...", 50, 160, 255, 255, 0, 255);
-        swapBuffers(0);
         display_manager_init_hardware_cursor(os_framebuffer);
-
     } else {
-
         printf("[KERNEL] Display Setup Error!", 50, 400, 255, 0, 0, 255);
-
-        int qemu_resp = -screen_res;
-
-        if (qemu_resp == 0x1200) {
-            printf("QEMU RESP: VIRTIO_GPU_RESP_ERR_UNSPEC (General Device Error)", 50, 430, 255, 100, 100, 255);
-        } else if (qemu_resp == 0x1201) {
-            printf("QEMU RESP: VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY", 50, 430, 255, 100, 100, 255);
-        } else if (qemu_resp == 0x1202) {
-            printf("QEMU RESP: VIRTIO_GPU_RESP_ERR_INVALID_SCANOUT_ID", 50, 430, 255, 100, 100, 255);
-        } else if (qemu_resp == 0x1203) {
-            printf("QEMU RESP: VIRTIO_GPU_RESP_ERR_INVALID_RESOURCE_ID (Conflict)", 50, 430, 255, 100, 100, 255);
-        } else if (qemu_resp == 0x1205) {
-            printf("QEMU RESP: VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER", 50, 430, 255, 100, 100, 255);
-        } else {
-
-            if (screen_res == -15) {
-                printf("OS Error: Failed to allocate framebuffer RAM (Page aligned)", 50, 430, 255, 100, 100, 255);
-            } else {
-                printf("Unknown status code raw register value received", 50, 430, 255, 100, 100, 255);
-            }
-        }
-
         swapBuffers(0);
         while(1) { __asm__ volatile("hlt"); }
     }
@@ -515,18 +462,16 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
         __asm__ volatile("nop");
     }
     __asm__ volatile("sti");
-    static uint32_t last_sent_mouse_x = 9999;
-    static uint32_t last_sent_mouse_y = 9999;
 
     fillScreen(0, 0, 0, 255);
-    printf("len:", 0, 100, 255, 255, 0, 255);  print_hex(edit_buf_len, 60, 100);
-    printf("res:", 0, 120, 255, 255, 0, 255);  print_hex((uint32_t)res, 60, 120);
+    printf("SMP Cores online:", 0, 100, 0, 255, 100, 255);
+    print_hex((uint32_t)smp_cpu_count(), 200, 100);
     swapBuffers(0);
 
     char command[512] = {0};
-    int i = 0;          // Длина введенной строки
-    int o = 1;          // Номер текущей строки консоли
-    int cursor_pos = 0; // Позиция курсора
+    int i = 0;
+    int o = 1;
+    int cursor_pos = 0;
     int sh = 0;
 
     uint32_t cursor_ticks = 0;
@@ -534,14 +479,11 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
 
     redraw_input_line(o, command, i, cursor_pos, cursor_visible);
     swapBuffers(0);
+
     extern volatile uint8_t kbd_ring_buffer[];
     extern volatile int kbd_head;
     extern volatile int kbd_tail;
-
-    extern int in_edit_mode;
-    extern char edit_buffer[];
-    extern int edit_buf_len;
-    extern char active_edit_filename[];
+    extern spinlock_t kbd_lock;
 
     while (1) {
         __asm__ __volatile__("hlt");
@@ -555,18 +497,23 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
             }
         }
 
-        while (kbd_head != kbd_tail) {
+        while (1) {
+            uint64_t kflags = spin_lock_irqsave(&kbd_lock);
+            if (kbd_head == kbd_tail) {
+                spin_unlock_irqrestore(&kbd_lock, kflags);
+                break;
+            }
             uint8_t current_scancode = kbd_ring_buffer[kbd_tail];
             kbd_tail = (kbd_tail + 1) % KBD_BUFFER_SIZE;
+            spin_unlock_irqrestore(&kbd_lock, kflags);
 
             handle_keyboard_scancode(current_scancode, command, &i, &cursor_pos, &o, &sh);
 
             need_redraw = 1;
-            cursor_visible = 1; // При нажатии курсор всегда виден
-            cursor_ticks = 0;   // Сброс таймера мигания
+            cursor_visible = 1;
+            cursor_ticks = 0;
         }
 
-        // --- Перерисовка экрана при изменениях ---
         if (need_redraw) {
             if (in_edit_mode) {
                 fillScreen(0, 0, 0, 255);

@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "../../kernel/kernel/kernel.h"
+
 extern volatile int has_keyboard_event;
 extern volatile int has_mouse_event;
 extern volatile uint8_t last_scancode;
@@ -14,6 +15,7 @@ int mouse_x = 512;
 int mouse_y = 384;
 
 uint8_t mouse_bytes[4];
+static spinlock_t mouse_lock = SPINLOCK_INIT;
 
 void mouse_wait_write() {
     volatile uint32_t timeout = 1000000;
@@ -43,9 +45,7 @@ uint8_t mouse_read() {
 
 void init_mouse() {
     uint8_t init_status = inb(0x64);
-    if (init_status == 0xFF) {
-        return;
-    }
+    if (init_status == 0xFF) return;
 
     volatile uint32_t clean = 1000;
     while ((inb(0x64) & 1) && --clean) {
@@ -53,27 +53,19 @@ void init_mouse() {
         io_wait();
     }
 
-    mouse_wait_write();
-    outb(0x64, 0xA8);
-
-    mouse_wait_write();
-    outb(0x64, 0x20);
+    mouse_wait_write(); outb(0x64, 0xA8);
+    mouse_wait_write(); outb(0x64, 0x20);
     mouse_wait_read();
     uint8_t comp_status = inb(0x60);
 
     comp_status |= 0x02;
     comp_status &= ~0x20;
 
-    mouse_wait_write();
-    outb(0x64, 0x60);
-    mouse_wait_write();
-    outb(0x60, comp_status);
+    mouse_wait_write(); outb(0x64, 0x60);
+    mouse_wait_write(); outb(0x60, comp_status);
 
-    mouse_write(0xF6);
-    mouse_read();
-
-    mouse_write(0xF4);
-    mouse_read();
+    mouse_write(0xF6); mouse_read();
+    mouse_write(0xF4); mouse_read();
 
     mouse_cycle = 0;
     mouse_x = 512;
@@ -81,9 +73,11 @@ void init_mouse() {
 }
 
 void mouse_handler_c() {
+    uint64_t flags = spin_lock_irqsave(&mouse_lock);
     uint8_t status = inb(0x64);
 
     if ((status & 0x01) == 0 || (status & 0x20) == 0) {
+        spin_unlock_irqrestore(&mouse_lock, flags);
         send_apic_eoi();
         return;
     }
@@ -92,8 +86,10 @@ void mouse_handler_c() {
 
     if (mouse_cycle == 0 && (data & 0x08) == 0) {
         mouse_cycle = 0;
+        spin_unlock_irqrestore(&mouse_lock, flags);
         outb(0xA0, 0x20);
         outb(0x20, 0x20);
+        send_apic_eoi();
         return;
     }
 
@@ -121,11 +117,11 @@ void mouse_handler_c() {
         }
 
         has_mouse_event = 1;
-
         mouse_last_x = mouse_x;
         mouse_last_y = mouse_y;
     }
 
+    spin_unlock_irqrestore(&mouse_lock, flags);
     outb(0xA0, 0x20);
     outb(0x20, 0x20);
     send_apic_eoi();

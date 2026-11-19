@@ -17,6 +17,8 @@ LDFLAGS = -Wl,--subsystem,10 \
 
 C_SRCS = boot/bootloader.c \
          system/kernel/kernel/kernel.c \
+         system/kernel/kernel/smp.c \
+         system/kernel/kernel/sched.c \
          system/graphic/screen.c \
          system/kernel/idt/idt.c \
          system/drivers/idt/keyboard.c \
@@ -92,6 +94,8 @@ build_dir:
 run:
 	qemu-system-x86_64 \
 		-machine q35 \
+		-smp 6 \
+		-enable-kvm \
 		-bios ./OVMF.fd \
 		-m 512M \
 		-vga virtio \

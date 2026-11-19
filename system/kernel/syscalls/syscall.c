@@ -4,7 +4,7 @@
 typedef struct __attribute__((packed)) {
     uint32_t x;
     uint32_t y;
-    uint32_t buttons;   /* 1 = ЛКМ, 2 = ПКМ, 4 = СКМ */
+    uint32_t buttons;
 } PxMouse;
 
 typedef struct __attribute__((packed)) {
@@ -32,12 +32,15 @@ extern volatile int mouse_buttons, mouse_click_event;
 #define OUT_CHAR_W  10
 
 static int out_x0, out_y0, out_cx, out_line;
+static spinlock_t out_lock = SPINLOCK_INIT;
 
 void sys_out_begin(int x, int y) {
+    uint64_t flags = spin_lock_irqsave(&out_lock);
     out_x0 = x;
     out_y0 = y;
     out_cx = x;
     out_line = 0;
+    spin_unlock_irqrestore(&out_lock, flags);
 }
 
 int sys_out_lines(void) {
@@ -54,6 +57,7 @@ static void out_flush(char* seg, int* k) {
 
 static int64_t sys_write(const char* s, uint64_t n) {
     if (!user_ptr_ok((uint64_t)s, n)) return -1;
+    uint64_t flags = spin_lock_irqsave(&out_lock);
     char seg[96];
     int k = 0;
     for (uint64_t i = 0; i < n; i++) {
@@ -68,16 +72,19 @@ static int64_t sys_write(const char* s, uint64_t n) {
         }
     }
     out_flush(seg, &k);
+    spin_unlock_irqrestore(&out_lock, flags);
     swapBuffers(0);
     return (int64_t)n;
 }
 
 static int64_t sys_clear(void) {
     fillScreen(0, 0, 0, 255);
+    uint64_t flags = spin_lock_irqsave(&out_lock);
     out_x0 = 15;
     out_y0 = 20;
     out_cx = 15;
     out_line = 0;
+    spin_unlock_irqrestore(&out_lock, flags);
     swapBuffers(0);
     return 0;
 }
@@ -88,7 +95,6 @@ typedef struct __attribute__((packed)) {
 } PxGfxArgs;
 
 int64_t syscall_dispatch(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3) {
-    /* В начале syscall_dispatch: */
     uint64_t cr4;
     __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
     if (cr4 & (1ULL << 21)) {
@@ -148,7 +154,7 @@ int64_t syscall_dispatch(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3) {
             if (!user_ptr_ok(a1, sizeof(PxGfxArgs))) return -1;
             const PxGfxArgs* p = (const PxGfxArgs*)a1;
             drawLine((int)p->a, (int)p->b, (int)p->c, (int)p->d,
-                       p->r, p->g, p->bl, p->al);
+                     p->r, p->g, p->bl, p->al);
             return 0;
         }
         case SYS_DRAW_ELLIPSE: {
@@ -218,6 +224,11 @@ int64_t syscall_dispatch(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3) {
                             p->r, p->g, p->b, p->a);
             return 0;
         }
+        case SYS_YIELD:
+            sched_yield();
+            return 0;
+        case SYS_GET_TICKS:
+            return (int64_t)sched_get_total_ticks();
         default:
             return -1;
     }

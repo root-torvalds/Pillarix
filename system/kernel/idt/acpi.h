@@ -1,7 +1,10 @@
 #pragma once
-
 #include <stdint.h>
 #include "../../../efi.h"
 
-// Функция для поиска базовых адресов Local APIC и I/O APIC через ACPI
-int init_acpi_apic(BootInfo* info, uint32_t* out_local_apic, uint32_t* out_io_apic);
+#define MAX_CPUS 64
+
+void init_apic(BootInfo* info);
+int acpi_get_cpu_count(void);
+uint8_t acpi_get_apic_id(int cpu_idx);
+int acpi_find_cpu_by_apic_id(uint8_t apic_id);

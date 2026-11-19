@@ -1,6 +1,8 @@
 #include "qt.h"
 #include "../kernel/kernel/kernel.h"
 
+static spinlock_t gfx_swap_lock = SPINLOCK_INIT;
+
 #define QT_ABSOLUTE_SIZE 0
 #define QT_RELATIVE_SIZE 1
 
@@ -38,6 +40,7 @@ EFIAPI EFI_GRAPHICS_OUTPUT_BLT_PIXEL getPixel(uint32_t x, uint32_t y) {
 EFIAPI void swapBuffers(EFI_GRAPHICS_OUTPUT_PROTOCOL *gop) {
     (void)gop;
     if (!real_framebuffer || !virtual_framebuffer) return;
+    uint64_t flags = spin_lock_irqsave(&gfx_swap_lock);
 
     UINT32* src = (UINT32*)virtual_framebuffer;
     for (UINT32 i = 0; i < 1920 * 1080; i++) {
@@ -48,6 +51,7 @@ EFIAPI void swapBuffers(EFI_GRAPHICS_OUTPUT_PROTOCOL *gop) {
 
         real_framebuffer[i] = (r << 16) | (g << 8) | b;
     }
+    spin_unlock_irqrestore(&gfx_swap_lock, flags);
 }
 
 EFIAPI void drawPoint(uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {

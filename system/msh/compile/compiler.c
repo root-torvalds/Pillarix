@@ -229,6 +229,24 @@ static int math_format(double v, char* out) {
     return n;
 }
 
+
+static void int_to_str(int v, char* out) {
+    char tmp[16];
+    int t = 0, n = 0;
+    if (v == 0) { out[0] = '0'; out[1] = '\0'; return; }
+    if (v < 0) { out[n++] = '-'; v = -v; }
+    while (v > 0) { tmp[t++] = '0' + (v % 10); v /= 10; }
+    while (t > 0) out[n++] = tmp[--t];
+    out[n] = '\0';
+}
+
+static void smp_worker_test(uint64_t id) {
+    volatile uint64_t acc = 0;
+    for (uint64_t k = 0; k < 200000000ULL; k++) {
+        acc += k + id;
+    }
+}
+
 int terminal_execute_command(char* cmd, int x, int y, int o) {
     int line_height = 20;
     int out_y = (o + 1) * line_height;
@@ -278,8 +296,11 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
         printf("  edit    - Edit file (RShift+Enter to save)", out_x, out_y + line_height * 10, 150, 150, 150, 255);
         printf("  install - Format disk and install OS", out_x, out_y + line_height * 11, 150, 150, 150, 255);
         printf("  math    - Calculator: math 2*(3+4)", out_x, out_y + line_height * 12, 150, 150, 150, 255);
-        printf("  ./name  - Run program from disk: ./hello", out_x, out_y + line_height * 13, 150, 150, 150, 255);
-        return 15;
+        printf("  ./name  - Run program (add & for background)", out_x, out_y + line_height * 13, 150, 150, 150, 255);
+        printf("  cores   - Show SMP cores and load", out_x, out_y + line_height * 14, 150, 150, 150, 255);
+        printf("  ps      - Show running tasks", out_x, out_y + line_height * 15, 150, 150, 150, 255);
+        printf("  test_smp- Spawn 5 test worker tasks", out_x, out_y + line_height * 16, 150, 150, 150, 255);
+        return 18;
     } else if (term_strcmp(argv[0], "ver") == 0) {
         printf("Pillarix OS v4C-RC", out_x, out_y, 0, 255, 100, 255);
         return 1;
@@ -409,8 +430,49 @@ int terminal_execute_command(char* cmd, int x, int y, int o) {
             printf(res_buf, out_x, out_y, 0, 255, 100, 255);
         }
         return 1;
+    } else if (term_strcmp(argv[0], "cores") == 0) {
+        int n = smp_cpu_count();
+        char buf[16];
+        for (int c = 0; c < n; c++) {
+            int ry = out_y + c * line_height;
+            printf("CPU #", out_x, ry, 100, 200, 255, 255);
+            int_to_str(c, buf);
+            printf(buf, out_x + 50, ry, 255, 255, 255, 255);
+            printf("tasks:", out_x + 100, ry, 180, 180, 180, 255);
+            int_to_str(sched_get_cpu_task_count(c), buf);
+            printf(buf, out_x + 170, ry, 0, 255, 100, 255);
+            printf("ticks:", out_x + 230, ry, 180, 180, 180, 255);
+            print_hex((uint32_t)sched_get_cpu_ticks(c), out_x + 300, ry);
+        }
+        return n;
+    } else if (term_strcmp(argv[0], "ps") == 0) {
+        task_info_t list[MAX_TASKS];
+        int cnt = sched_snapshot_tasks(list, MAX_TASKS);
+        if (cnt == 0) {
+            printf("No active tasks", out_x, out_y, 180, 180, 180, 255);
+            return 1;
+        }
+        char buf[16];
+        for (int t = 0; t < cnt; t++) {
+            int ry = out_y + t * line_height;
+            printf("PID", out_x, ry, 150, 150, 150, 255);
+            int_to_str(list[t].id, buf);
+            printf(buf, out_x + 40, ry, 255, 255, 255, 255);
+            printf("CPU", out_x + 90, ry, 100, 200, 255, 255);
+            int_to_str(list[t].cpu_id, buf);
+            printf(buf, out_x + 130, ry, 255, 255, 255, 255);
+            printf(list[t].name, out_x + 180, ry, 0, 255, 100, 255);
+        }
+        return cnt;
+    } else if (term_strcmp(argv[0], "test_smp") == 0) {
+        for (int k = 0; k < 5; k++) {
+            sched_spawn_kthread("worker", smp_worker_test, (uint64_t)k);
+        }
+        printf("Spawned 5 worker tasks across cores (run cores/ps)", out_x, out_y, 0, 255, 100, 255);
+        return 1;
     } else if (argv[0][0] == '.' && argv[0][1] == '/') {
-        return px_run(argv[0] + 2, out_x, out_y);
+        int bg = (argc > 1 && term_strcmp(argv[1], "&") == 0) ? 1 : 0;
+        return px_run_mode(argv[0] + 2, out_x, out_y, bg);
     } else if (term_strcmp(argv[0], "install") == 0) {
         mkfs_ext4();
         current_dir[0] = '/';

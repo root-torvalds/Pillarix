@@ -7,12 +7,16 @@ extern "C" {
 #endif
 
 #include <stdint.h>
-#include "../../../efi.h" // efi.h лежит в корне проекта
+#include "../../../efi.h"
 
 extern volatile int has_mouse_event;
 extern volatile uint8_t last_scancode;
 
 // Подключения из system/kernel/
+#include "spinlock.h"
+#include "smp.h"
+#include "sched.h"
+#include "../idt/acpi.h"
 #include "../idt/apic.h"
 #include "../idt/idt.h"
 #include "lib.h"
@@ -21,15 +25,13 @@ extern volatile uint8_t last_scancode;
 #include "../syscalls/syscall.h"
 
 // Подключения из system/drivers/
-#include "../../../system/drivers/idt/hda.h"       // или относительный путь ниже
+#include "../../../system/drivers/idt/hda.h"
 #include "../../drivers/fs/ahci.h"
 #include "../../drivers/fs/ext4.h"
 #include "../../drivers/idt/mouse.h"
 #include "../../drivers/idt/keyboard.h"
 #include "../../drivers/virtio/virtio_pci.h"
 #include "../../drivers/virtio/virtio_gpu.h"
-// #include "../../system/drivers/virtio/virtio_queue.h"
-// #include "../../system/drivers/virtio/virtio_gpu_proto.h"
 
 // Подключения из system/graphic/
 #include "../../graphic/print.h"

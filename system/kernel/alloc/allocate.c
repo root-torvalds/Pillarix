@@ -1,5 +1,7 @@
 #include "../kernel/kernel.h"
 
+static spinlock_t heap_lock = SPINLOCK_INIT;
+
 void* memset(void* ptr, int value, unsigned long num) {
     unsigned char* p = (unsigned char*)ptr;
     for (unsigned long i = 0; i < num; i++) {
@@ -26,13 +28,16 @@ struct block_meta {
 struct block_meta* heap_start = 0;
 
 void init_heap(void* free_ram_start, unsigned long free_ram_size) {
+    uint64_t flags = spin_lock_irqsave(&heap_lock);
     heap_start = (struct block_meta*)free_ram_start;
     heap_start->size = free_ram_size - sizeof(struct block_meta);
     heap_start->is_free = 1;
     heap_start->next = 0;
+    spin_unlock_irqrestore(&heap_lock, flags);
 }
 
 void* malloc(unsigned long size) {
+    uint64_t flags = spin_lock_irqsave(&heap_lock);
     struct block_meta* current = heap_start;
     while (current) {
         if (current->is_free && current->size >= size) {
@@ -46,15 +51,18 @@ void* malloc(unsigned long size) {
                 current->next = next_block;
             }
             current->is_free = 0;
+            spin_unlock_irqrestore(&heap_lock, flags);
             return (void*)(current + 1);
         }
         current = current->next;
     }
+    spin_unlock_irqrestore(&heap_lock, flags);
     return 0;
 }
 
 void free(void* ptr) {
     if (!ptr) return;
+    uint64_t flags = spin_lock_irqsave(&heap_lock);
     struct block_meta* block = (struct block_meta*)ptr - 1;
     block->is_free = 1;
 
@@ -62,6 +70,7 @@ void free(void* ptr) {
         block->size += sizeof(struct block_meta) + block->next->size;
         block->next = block->next->next;
     }
+    spin_unlock_irqrestore(&heap_lock, flags);
 }
 
 void* calloc(unsigned long num, unsigned long size) {
