@@ -36,6 +36,26 @@ typedef struct __attribute__((packed)) {
     uint8_t  r, g, b, a;
 } PxArcArgs;
 
+typedef struct __attribute__((packed)) {
+    char    name[256];
+    uint8_t file_type;
+} PxDirEntry;
+
+typedef struct __attribute__((packed)) {
+    uint32_t cpu_id;
+    uint32_t task_count;
+    uint64_t ticks;
+} PxCpuInfo;
+
+typedef struct {
+    int id;
+    int cpu_id;
+    int is_user;
+    int state;
+    uint64_t rsp, kstack_top, user_mem_base, user_mem_size, exit_code, ticks_used;
+    char name[32];
+} PxTaskInfo;
+
 static inline int64_t syscall3(uint64_t n, uint64_t a1, uint64_t a2, uint64_t a3) {
     int64_t ret;
     uint64_t d1, d2, d3;
@@ -62,7 +82,6 @@ static inline uint32_t wait_click(PxMouse* m) {
 static inline uint32_t wait_mouse(PxMouse* m) {
     return (uint32_t)syscall3(7, (uint64_t)m, 2, 0);
 }
-
 
 static inline void printf(const char* s) {
     uint64_t n = 0;
@@ -151,3 +170,21 @@ static inline void fillRoundedRect(uint32_t x, uint32_t y, uint32_t w, uint32_t 
     PxRoundRectArgs args = { x, y, w, h, xRadius, yRadius, mode, r, g, b, a };
     syscall3(16, (uint64_t)&args, 0, 0);
 }
+
+static inline void sys_yield(void) { syscall3(17, 0, 0, 0); }
+static inline uint64_t sys_get_ticks(void) { return (uint64_t)syscall3(18, 0, 0, 0); }
+
+static inline int get_scancode(int blocking) { return (int)syscall3(19, (uint64_t)blocking, 0, 0); }
+static inline int fs_read(const char* p, void* b, uint64_t max) { return (int)syscall3(20, (uint64_t)p, (uint64_t)b, max); }
+static inline int fs_write(const char* p, const void* b, uint64_t sz) { return (int)syscall3(21, (uint64_t)p, (uint64_t)b, sz); }
+static inline int fs_mkdir(const char* p) { return (int)syscall3(22, (uint64_t)p, 0, 0); }
+static inline int fs_is_dir(const char* p) { return (int)syscall3(23, (uint64_t)p, 0, 0); }
+static inline int fs_list(const char* p, PxDirEntry* out, uint64_t max) { return (int)syscall3(24, (uint64_t)p, (uint64_t)out, max); }
+static inline void fs_mkfs(void) { syscall3(25, 0, 0, 0); }
+static inline int sys_spawn(const char* p) { return (int)syscall3(26, (uint64_t)p, 0, 0); }
+static inline uint64_t sys_wait(int tid) { return (uint64_t)syscall3(27, (uint64_t)tid, 0, 0); }
+static inline int sys_ps(PxTaskInfo* out, uint64_t max) { return (int)syscall3(28, (uint64_t)out, max, 0); }
+static inline int sys_cores(PxCpuInfo* out, uint64_t max) { return (int)syscall3(29, (uint64_t)out, max, 0); }
+static inline void sys_reboot(void) { syscall3(30, 0, 0, 0); }
+static inline void sys_shutdown(void) { syscall3(31, 0, 0, 0); }
+static inline int fs_remove(const char* p) { return (int)syscall3(32, (uint64_t)p, 0, 0); }

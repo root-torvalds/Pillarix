@@ -156,3 +156,34 @@ int ext4_ls(const char* path, int x, int y) {
     }
     return lines;
 }
+
+int ext4_list_dir(const char* path, Ext4DirItem* out, uint32_t max_items) {
+    uint32_t ino = ext4_find_inode_by_path(path);
+    if (ino == 0) return EXT4_E_NOENT;
+
+    Ext4Inode inode;
+    if (!ext4_read_inode(ino, &inode)) return EXT4_E_IO;
+    if ((inode.i_mode & EXT4_S_IFMT) != EXT4_S_IFDIR) return -20;
+
+    uint32_t block = ext4_inode_first_block(&inode);
+    if (block == 0) return 0;
+
+    uint8_t dir_buf[EXT4_BLOCK_SIZE];
+    if (!ext4_read_block(block, dir_buf)) return EXT4_E_IO;
+
+    uint32_t count = 0;
+    uint32_t offset = 0;
+    while (offset < EXT4_BLOCK_SIZE && count < max_items) {
+        const Ext4DirectoryEntry* de = (const Ext4DirectoryEntry*)(dir_buf + offset);
+        if (de->rec_len == 0 || de->inode == 0) break;
+
+        uint8_t n = de->name_len;
+        for (uint8_t i = 0; i < n; i++) out[count].name[i] = de->name[i];
+        out[count].name[n] = '\0';
+        out[count].file_type = de->file_type;
+        count++;
+
+        offset += de->rec_len;
+    }
+    return (int)count;
+}

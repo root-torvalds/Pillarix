@@ -271,3 +271,109 @@ int ext4_create_dir(const char* path, const char* name) {
 
     return 0;
 }
+
+static void bitmap_clear_bit(uint32_t bitmap_block, uint32_t bit_index) {
+    uint8_t bm[EXT4_BLOCK_SIZE];
+    if (!ext4_read_block(bitmap_block, bm)) return;
+    bm[bit_index / 8] &= (uint8_t)~(1 << (bit_index % 8));
+    ext4_write_block(bitmap_block, bm);
+}
+
+static bool dir_name_match(const Ext4DirectoryEntry* de, const char* name) {
+    int n = 0;
+    while (n < de->name_len && name[n] != '\0') {
+        if (de->name[n] != name[n]) return false;
+        n++;
+    }
+    return de->name_len == n && name[n] == '\0';
+}
+
+/* Удаляет файл или пустой каталог. Возвращает 0 или отрицательный код ошибки. */
+int ext4_remove(const char* path) {
+    if (!path || path[0] != '/' || path[1] == '\0') return EXT4_E_BAD_NAME;
+
+    char dir_path[300], name[256];
+    ext4_split_path(path, dir_path, name);
+    if (name[0] == '\0' || (name[0] == '.' && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0')))) {
+        return EXT4_E_BAD_NAME;
+    }
+
+    uint32_t dir_ino = ext4_find_inode_by_path(dir_path);
+    if (dir_ino == 0) return EXT4_E_NO_PARENT;
+
+    Ext4Inode dir_inode;
+    uint32_t dir_block;
+    uint8_t dir_buf[EXT4_BLOCK_SIZE];
+    int err = ext4_load_dir(dir_ino, &dir_inode, &dir_block, dir_buf);
+    if (err != 0) return err;
+
+    uint32_t target_ino = ext4_dir_lookup(dir_buf, name);
+    if (target_ino == 0) return EXT4_E_NOENT;
+
+    Ext4Inode target;
+    if (!ext4_read_inode(target_ino, &target)) return EXT4_E_FILE_INODE;
+
+    bool is_dir = (target.i_mode & EXT4_S_IFMT) == EXT4_S_IFDIR;
+    if (is_dir) {
+        uint32_t tblk = ext4_inode_first_block(&target);
+        if (tblk != 0) {
+            uint8_t tbuf[EXT4_BLOCK_SIZE];
+            if (!ext4_read_block(tblk, tbuf)) return EXT4_E_IO;
+            uint32_t off = 0;
+            int entries = 0;
+            while (off < EXT4_BLOCK_SIZE) {
+                const Ext4DirectoryEntry* de = (const Ext4DirectoryEntry*)(tbuf + off);
+                if (de->rec_len == 0 || de->inode == 0) break;
+                entries++;
+                off += de->rec_len;
+            }
+            if (entries > 2) return -21; /* каталог не пуст */
+        }
+    }
+
+    /* Удаляем запись из родительского каталога, расширяя rec_len предыдущей записи */
+    uint32_t off = 0, prev_off = 0;
+    bool removed = false;
+    while (off < EXT4_BLOCK_SIZE) {
+        Ext4DirectoryEntry* de = (Ext4DirectoryEntry*)(dir_buf + off);
+        if (de->rec_len == 0 || de->inode == 0) break;
+        if (de->inode == target_ino && dir_name_match(de, name)) {
+            if (off > 0) {
+                Ext4DirectoryEntry* prev = (Ext4DirectoryEntry*)(dir_buf + prev_off);
+                prev->rec_len = (uint16_t)(prev->rec_len + de->rec_len);
+                ext4_zero(de, EXT4_DIRENT_HEADER);
+                removed = true;
+            }
+            break;
+        }
+        prev_off = off;
+        off += de->rec_len;
+    }
+    if (!removed) return EXT4_E_NOENT;
+    if (!ext4_write_block(dir_block, dir_buf)) return EXT4_E_DISK_WRITE;
+
+    if (is_dir && dir_inode.i_links_count > 0) {
+        dir_inode.i_links_count--;
+        ext4_write_inode(dir_ino, &dir_inode);
+    }
+
+    /* Освобождаем блоки данных по экстентам */
+    const struct ext4_extent_header* hdr = (const struct ext4_extent_header*)target.i_block;
+    if (hdr->eh_magic == EXT4_EXT_MAGIC && hdr->eh_entries > 0) {
+        const struct ext4_extent* exts =
+            (const struct ext4_extent*)(target.i_block + sizeof(struct ext4_extent_header));
+        for (uint16_t e = 0; e < hdr->eh_entries; e++) {
+            for (uint16_t b = 0; b < exts[e].e_ee_len; b++) {
+                uint32_t blk = exts[e].e_ee_start_lo + b;
+                if (blk >= EXT4_ALLOC_START_BLOCK) bitmap_clear_bit(EXT4_BLOCK_BITMAP_BLOCK, blk);
+            }
+        }
+    }
+
+    /* Освобождаем инод */
+    ext4_zero(&target, sizeof(target));
+    ext4_write_inode(target_ino, &target);
+    if (target_ino > 0) bitmap_clear_bit(EXT4_INODE_BITMAP_BLOCK, target_ino - 1);
+
+    return 0;
+}

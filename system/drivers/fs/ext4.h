@@ -121,3 +121,11 @@ int ext4_read_file_to_buffer(const char* path, void* buf, uint32_t max_size);
 bool ext4_is_dir(const char* path);
 int ext4_create_dir(const char* path, const char* name);
 bool ext4_is_dir(const char* path);
+
+typedef struct __attribute__((packed)) {
+    char    name[256];
+    uint8_t file_type; /* 1 = файл, 2 = каталог */
+} Ext4DirItem;
+
+int ext4_list_dir(const char* path, Ext4DirItem* out, uint32_t max_items);
+int ext4_remove(const char* path);

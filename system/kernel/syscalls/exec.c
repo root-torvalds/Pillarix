@@ -170,3 +170,57 @@ int px_run_mode(const char* name, int x, int y, int background) {
 int px_run(const char* name, int x, int y) {
     return px_run_mode(name, x, y, 0);
 }
+
+static int tid_to_slot_plus1[MAX_TASKS];
+
+int px_spawn(const char* name) {
+    if (!name || name[0] == '\0') return -1;
+
+    int slot = alloc_user_slot();
+    if (slot < 0) return -2;
+    uint8_t* mem = user_slots[slot];
+
+    char path[300];
+    int j = 0;
+    if (name[0] != '/') path[j++] = '/';
+    for (int k = 0; name[k] != '\0' && j < 298; k++) path[j++] = name[k];
+    path[j] = '\0';
+
+    int n = ext4_read_file_to_buffer(path, mem, PX_MAX);
+    if (n < (int)sizeof(PlxHeader)) { free_user_slot(slot); return -3; }
+
+    PlxHeader* h = (PlxHeader*)mem;
+    if (h->magic != PLX_MAGIC || h->entry >= (uint32_t)n || h->mem_size > PX_MAX) {
+        free_user_slot(slot);
+        return -4;
+    }
+
+    uint32_t total = h->mem_size > (uint32_t)n ? h->mem_size : (uint32_t)n;
+    for (uint32_t i = (uint32_t)n; i < total; i++) mem[i] = 0;
+    for (uint32_t i = PX_MAX; i < TASK_SLOT_SIZE; i++) mem[i] = 0;
+
+    if (vm_map_user(mem, PX_MAX, 1) != 0 ||
+        vm_map_user(mem + PX_MAX, USER_STACK, 0) != 0) {
+        free_user_slot(slot);
+        return -5;
+    }
+
+    int tid = sched_spawn_user(name,
+                               (uint64_t)(mem + h->entry),
+                               (uint64_t)(mem + TASK_SLOT_SIZE),
+                               (uint64_t)mem,
+                               TASK_SLOT_SIZE);
+    if (tid < 0) { free_user_slot(slot); return -6; }
+
+    if (tid < MAX_TASKS) tid_to_slot_plus1[tid] = slot + 1;
+    return tid;
+}
+
+uint64_t px_wait(int tid) {
+    uint64_t code = sched_wait(tid);
+    if (tid >= 0 && tid < MAX_TASKS && tid_to_slot_plus1[tid] > 0) {
+        free_user_slot(tid_to_slot_plus1[tid] - 1);
+        tid_to_slot_plus1[tid] = 0;
+    }
+    return code;
+}

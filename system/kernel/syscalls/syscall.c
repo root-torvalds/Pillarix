@@ -94,6 +94,28 @@ typedef struct __attribute__((packed)) {
     uint8_t  r, g, bl, al;
 } PxGfxArgs;
 
+
+extern void sys_reset(void);
+extern void sys_shutdown(void);
+
+typedef struct __attribute__((packed)) {
+    uint32_t cpu_id;
+    uint32_t task_count;
+    uint64_t ticks;
+} PxCpuInfo;
+
+static int copy_user_str(uint64_t uptr, char* dst, uint64_t max_len) {
+    if (!uptr || max_len == 0) return -1;
+    const char* s = (const char*)uptr;
+    uint64_t i = 0;
+    while (i < max_len - 1 && user_ptr_ok(uptr + i, 1)) {
+        dst[i] = s[i];
+        if (dst[i] == '\0') return (int)i;
+        i++;
+    }
+    return -1;
+}
+
 int64_t syscall_dispatch(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3) {
     uint64_t cr4;
     __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
@@ -229,6 +251,90 @@ int64_t syscall_dispatch(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3) {
             return 0;
         case SYS_GET_TICKS:
             return (int64_t)sched_get_total_ticks();
+        case SYS_GET_SCANCODE: {
+            extern volatile uint8_t kbd_ring_buffer[];
+            extern volatile int kbd_head, kbd_tail;
+            extern spinlock_t kbd_lock;
+            for (;;) {
+                uint64_t flags = spin_lock_irqsave(&kbd_lock);
+                if (kbd_head != kbd_tail) {
+                    uint8_t sc = kbd_ring_buffer[kbd_tail];
+                    kbd_tail = (kbd_tail + 1) % KBD_BUFFER_SIZE;
+                    spin_unlock_irqrestore(&kbd_lock, flags);
+                    return (int64_t)sc;
+                }
+                spin_unlock_irqrestore(&kbd_lock, flags);
+                if (!a1) return -1;
+                __asm__ volatile("sti; hlt");
+            }
+        }
+        case SYS_FS_READ: {
+            char path[300];
+            if (copy_user_str(a1, path, sizeof(path)) < 0) return -1;
+            if (!user_ptr_ok(a2, a3)) return -1;
+            return (int64_t)ext4_read_file_to_buffer(path, (void*)a2, (uint32_t)a3);
+        }
+        case SYS_FS_WRITE: {
+            char path[300], dir[300], name[256];
+            if (copy_user_str(a1, path, sizeof(path)) < 0) return -1;
+            if (a3 > 0 && !user_ptr_ok(a2, a3)) return -1;
+            ext4_split_path(path, dir, name);
+            return (int64_t)ext4_create_file(dir, name, 0x8180, (const void*)a2, (uint32_t)a3);
+        }
+        case SYS_FS_MKDIR: {
+            char path[300], dir[300], name[256];
+            if (copy_user_str(a1, path, sizeof(path)) < 0) return -1;
+            ext4_split_path(path, dir, name);
+            return (int64_t)ext4_create_dir(dir, name);
+        }
+        case SYS_FS_IS_DIR: {
+            char path[300];
+            if (copy_user_str(a1, path, sizeof(path)) < 0) return -1;
+            return ext4_is_dir(path) ? 1 : 0;
+        }
+        case SYS_FS_LIST: {
+            char path[300];
+            if (copy_user_str(a1, path, sizeof(path)) < 0) return -1;
+            if (a3 > 256 || !user_ptr_ok(a2, a3 * sizeof(Ext4DirItem))) return -1;
+            return (int64_t)ext4_list_dir(path, (Ext4DirItem*)a2, (uint32_t)a3);
+        }
+        case SYS_FS_MKFS:
+            mkfs_ext4();
+            return 0;
+        case SYS_SPAWN: {
+            char path[300];
+            if (copy_user_str(a1, path, sizeof(path)) < 0) return -1;
+            return (int64_t)px_spawn(path);
+        }
+        case SYS_WAIT:
+            return (int64_t)px_wait((int)a1);
+        case SYS_PS: {
+            if (a2 > MAX_TASKS || !user_ptr_ok(a1, a2 * sizeof(task_info_t))) return -1;
+            return (int64_t)sched_snapshot_tasks((task_info_t*)a1, (int)a2);
+        }
+        case SYS_CORES: {
+            int n = smp_cpu_count();
+            if ((uint64_t)n > a2) n = (int)a2;
+            if (!user_ptr_ok(a1, (uint64_t)n * sizeof(PxCpuInfo))) return -1;
+            PxCpuInfo* out = (PxCpuInfo*)a1;
+            for (int c = 0; c < n; c++) {
+                out[c].cpu_id = (uint32_t)c;
+                out[c].task_count = (uint32_t)sched_get_cpu_task_count(c);
+                out[c].ticks = sched_get_cpu_ticks(c);
+            }
+            return (int64_t)n;
+        }
+        case SYS_REBOOT:
+            sys_reset();
+            return 0;
+        case SYS_SHUTDOWN:
+            sys_shutdown();
+            return 0;
+        case SYS_FS_REMOVE: {
+            char path[300];
+            if (copy_user_str(a1, path, sizeof(path)) < 0) return -1;
+            return (int64_t)ext4_remove(path);
+        }
         default:
             return -1;
     }

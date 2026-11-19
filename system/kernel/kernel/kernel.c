@@ -468,80 +468,40 @@ void __attribute__((ms_abi)) kernel_main(BootInfo* info) {
     print_hex((uint32_t)smp_cpu_count(), 200, 100);
     swapBuffers(0);
 
-    char command[512] = {0};
-    int i = 0;
-    int o = 1;
-    int cursor_pos = 0;
-    int sh = 0;
-
-    uint32_t cursor_ticks = 0;
-    int cursor_visible = 1;
-
-    redraw_input_line(o, command, i, cursor_pos, cursor_visible);
-    swapBuffers(0);
-
-    extern volatile uint8_t kbd_ring_buffer[];
-    extern volatile int kbd_head;
-    extern volatile int kbd_tail;
-    extern spinlock_t kbd_lock;
+    const char* shell_paths[] = {
+        "/apps/core/sh",
+        "/apps/core/sh.plx",
+        "/sh.plx",
+        "/sh"
+    };
 
     while (1) {
-        __asm__ __volatile__("hlt");
-        int need_redraw = 0;
-
-        if (!in_edit_mode) {
-            cursor_ticks++;
-            if (cursor_ticks % 4 == 0) {
-                cursor_visible = !cursor_visible;
-                need_redraw = 1;
-            }
-        }
-
-        while (1) {
-            uint64_t kflags = spin_lock_irqsave(&kbd_lock);
-            if (kbd_head == kbd_tail) {
-                spin_unlock_irqrestore(&kbd_lock, kflags);
-                break;
-            }
-            uint8_t current_scancode = kbd_ring_buffer[kbd_tail];
-            kbd_tail = (kbd_tail + 1) % KBD_BUFFER_SIZE;
-            spin_unlock_irqrestore(&kbd_lock, kflags);
-
-            handle_keyboard_scancode(current_scancode, command, &i, &cursor_pos, &o, &sh);
-
-            need_redraw = 1;
-            cursor_visible = 1;
-            cursor_ticks = 0;
-        }
-
-        if (need_redraw) {
-            if (in_edit_mode) {
-                fillScreen(0, 0, 0, 255);
-                printf("--- EDITING FILE (Press RShift+Enter to save & exit) ---", 0, 20, 200, 200, 0, 255);
-                printf("file:", 600, 60, 255, 255, 0, 255);
-                printf(edit_target, 660, 60, 255, 255, 255, 255);
-                printf("len:", 600, 20, 255, 255, 0, 255);  print_hex(edit_buf_len, 660, 20);
-                printf("sc:",  600, 40, 255, 255, 0, 255);  print_hex(last_scancode, 660, 40);
-                int cur_x = 0;
-                int cur_y = 50;
-                for (int idx = 0; idx < edit_buf_len; idx++) {
-                    if (edit_buffer[idx] == '\n') {
-                        cur_x = 0;
-                        cur_y += LINE_HEIGHT;
-                    } else {
-                        char s[2] = { edit_buffer[idx], '\0' };
-                        printf(s, cur_x, cur_y, 255, 255, 255, 255);
-                        cur_x += 10;
-                        if (cur_x > 780) {
-                            cur_x = 0;
-                            cur_y += LINE_HEIGHT;
-                        }
-                    }
-                }
-            } else {
-                redraw_input_line(o, command, i, cursor_pos, cursor_visible);
-            }
+        int tid = -1;
+        int y = 140;
+        for (int p = 0; p < 4; p++) {
+            printf("[KERNEL] Trying:", 15, y, 200, 200, 200, 255);
+            printf(shell_paths[p], 190, y, 100, 200, 255, 255);
             swapBuffers(0);
+
+            tid = px_spawn(shell_paths[p]);
+            if (tid >= 0) break;
+
+            printf("err:", 420, y, 255, 80, 80, 255);
+            print_hex((uint32_t)tid, 470, y);
+            swapBuffers(0);
+            y += 20;
+        }
+
+        if (tid >= 0) {
+            uint64_t code = px_wait(tid);
+            fillScreen(0, 0, 0, 255);
+            printf("[KERNEL] Shell exited, code:", 15, 20, 255, 255, 0, 255);
+            print_hex((uint32_t)code, 310, 20);
+            swapBuffers(0);
+        } else {
+            printf("Failed to start shell (-3=not found, -4=bad PLX, -5=vm_map)", 15, y + 20, 255, 80, 80, 255);
+            swapBuffers(0);
+            while (1) { __asm__ volatile("hlt"); }
         }
     }
 }
