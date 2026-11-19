@@ -361,7 +361,7 @@ static int exec_command(char* cmd, int* line_ptr) {
         drawText("  ps       - Show running tasks",                  out_x, out_y + LINE_HEIGHT * 17, 150, 150, 150, 255);
         return 18;
     } else if (str_cmp(argv[0], "ver") == 0) {
-        drawText("Pillarix OS v4C-RC (User Space Shell)", out_x, out_y, 0, 255, 100, 255);
+        drawText("Pillarix OS v4L-RC (User Space Shell)", out_x, out_y, 0, 255, 100, 255);
         return 1;
     } else if (str_cmp(argv[0], "clear") == 0) {
         fillScreen(0, 0, 0, 255);
